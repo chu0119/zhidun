@@ -3,12 +3,15 @@
 import React, { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { useAnalysisStore } from '@/stores/analysis-store'
+import { useConfigStore } from '@/stores/config-store'
 import { extractChartData } from '@/utils/chart-data'
 
 export function ChartsPanel() {
   const reportText = useAnalysisStore(s => s.reportText)
   const localReportText = useAnalysisStore(s => s.localReportText)
   const logLines = useAnalysisStore(s => s.logLines)
+  const fontSizes = useConfigStore(s => s.config.fontSizes)
+  const scale = fontSizes.charts / 12
 
   // 合并两份报告的数据
   const chartData = useMemo(() => {
@@ -27,6 +30,7 @@ export function ChartsPanel() {
     textStyle: {
       fontFamily: 'Noto Sans SC, sans-serif',
       color: '#7a8ba8',
+      fontSize: Math.round(12 * scale),
     },
   }
 
@@ -37,7 +41,7 @@ export function ChartsPanel() {
       text: '攻击类型分布',
       left: 'center',
       top: 10,
-      textStyle: { color: '#00f0ff', fontSize: 14, fontFamily: 'Orbitron' },
+      textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
     },
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
     color: themeColors,
@@ -52,10 +56,10 @@ export function ChartsPanel() {
       },
       label: {
         color: '#7a8ba8',
-        fontSize: 11,
+        fontSize: Math.round(11 * scale),
       },
       emphasis: {
-        label: { show: true, fontSize: 14, fontWeight: 'bold' },
+        label: { show: true, fontSize: Math.round(14 * scale), fontWeight: 'bold' },
         itemStyle: { shadowBlur: 20, shadowColor: 'rgba(0, 240, 255, 0.5)' },
       },
       data: chartData?.attackTypes?.length ? chartData.attackTypes : [
@@ -71,7 +75,7 @@ export function ChartsPanel() {
       text: '风险等级分布',
       left: 'center',
       top: 10,
-      textStyle: { color: '#00f0ff', fontSize: 14, fontFamily: 'Orbitron' },
+      textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
     },
     tooltip: { trigger: 'axis' },
     color: ['#ff0040', '#ff8800', '#ffcc00', '#0088ff'],
@@ -115,7 +119,7 @@ export function ChartsPanel() {
       text: '攻击源 IP 统计',
       left: 'center',
       top: 10,
-      textStyle: { color: '#00f0ff', fontSize: 14, fontFamily: 'Orbitron' },
+      textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
     },
     tooltip: { trigger: 'axis' },
     grid: { left: '25%', right: '10%', bottom: '10%', top: '20%' },
@@ -129,7 +133,7 @@ export function ChartsPanel() {
       type: 'category',
       data: chartData?.ipStats?.map(ip => ip.name) || ['暂无数据'],
       axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
-      axisLabel: { color: '#7a8ba8', fontSize: 11 },
+      axisLabel: { color: '#7a8ba8', fontSize: Math.round(11 * scale) },
     },
     series: [{
       type: 'bar',
@@ -158,7 +162,7 @@ export function ChartsPanel() {
       text: '攻击时间线分析',
       left: 'center',
       top: 10,
-      textStyle: { color: '#00f0ff', fontSize: 14, fontFamily: 'Orbitron' },
+      textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
     },
     tooltip: { trigger: 'axis' },
     grid: { left: '10%', right: '10%', bottom: '15%', top: '20%' },
@@ -196,7 +200,7 @@ export function ChartsPanel() {
   }
 
   return (
-    <div className="h-full overflow-y-auto" style={{ zoom: 'var(--font-charts-scale, 1)' }}>
+    <div className="h-full overflow-y-auto">
       {(!reportText && !localReportText) ? (
         <div className="flex items-center justify-center h-full text-[var(--text-dim)] text-sm">
           <div className="text-center">
