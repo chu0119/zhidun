@@ -169,4 +169,19 @@ function setupIPC() {
   ipcMain.handle('app:getVersion', () => {
     return app.getVersion()
   })
+
+  // HTTP request (用于 GeoIP 等外部 API 调用，避免 CORS 限制)
+  ipcMain.handle('http:request', async (_, url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) => {
+    try {
+      const response = await fetch(url, {
+        method: options?.method || 'GET',
+        body: options?.body,
+        headers: options?.headers,
+      })
+      const text = await response.text()
+      return { success: true, status: response.status, data: text }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
 }

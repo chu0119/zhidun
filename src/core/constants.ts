@@ -74,3 +74,35 @@ export const RISK_LEVELS = ['严重', '高危', '中危', '低危', '信息']
 
 // 版本
 export const APP_VERSION = '1.0.0'
+
+// MITRE ATT&CK 战术颜色映射
+export const MITRE_TACTIC_COLORS: Record<string, string> = {
+  'TA0043': '#ff6b6b',  // Reconnaissance - 红
+  'TA0001': '#ff8800',  // Initial Access - 橙
+  'TA0002': '#ffcc00',  // Execution - 黄
+  'TA0003': '#00ff88',  // Persistence - 绿
+  'TA0004': '#00f0ff',  // Privilege Escalation - 青
+  'TA0005': '#0088ff',  // Defense Evasion - 蓝
+  'TA0006': '#b400ff',  // Credential Access - 紫
+  'TA0007': '#ff00ff',  // Discovery - 品红
+  'TA0009': '#ff0088',  // Collection - 玫红
+  'TA0011': '#88ff00',  // Command and Control - 黄绿
+  'TA0010': '#00ffcc',  // Exfiltration - 薄荷
+  'TA0040': '#ff4444',  // Impact - 深红
+}
+
+// MITRE ATT&CK 战术名称映射
+export const MITRE_TACTIC_NAMES: Record<string, string> = {
+  'TA0043': '侦察',
+  'TA0001': '初始访问',
+  'TA0002': '执行',
+  'TA0003': '持久化',
+  'TA0004': '权限提升',
+  'TA0005': '防御逃逸',
+  'TA0006': '凭据访问',
+  'TA0007': '发现',
+  'TA0009': '收集',
+  'TA0011': '命令与控制',
+  'TA0010': '数据外传',
+  'TA0040': '影响',
+}

@@ -18,6 +18,8 @@ import { LogParser } from '@/core/log-parser'
 import { processLog, compressLogForAI } from '@/core/log-processor'
 import { exportToDocx, exportToPdf } from '@/core/report-generator'
 import { analyzeWithRules } from '@/core/rule-engine'
+import { extractIPsFromLines, lookupIPs } from '@/core/geoip'
+import { detectBots } from '@/core/bot-detector'
 import {
   showPhase1, showPhase2, showPhase3Pre, showPhase3Post, showPhase4,
   showLocalAnalysisPhase1, showLocalAnalysisPhase2, showLocalAnalysisPhase3, showLocalAnalysisPhase4,
@@ -232,9 +234,21 @@ export function AppLayout() {
       await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
 
       store.setLocalReportText(result.report)
+      store.setLocalRuleResult(result)
       store.setLocalStatus('done')
 
       setActiveTab('local-report')
+
+      // 异步执行 GeoIP 查询和 Bot 检测（不阻塞报告展示）
+      const ips = extractIPsFromLines(allLines)
+      if (ips.length > 0) {
+        lookupIPs(ips).then(geoResults => {
+          store.setGeoIPResults(geoResults)
+        }).catch(() => {})
+      }
+
+      const botStats = detectBots(allLines)
+      store.setBotStats(botStats)
     } catch (error: any) {
       store.setLocalStatus('error')
       store.setError(error.message)

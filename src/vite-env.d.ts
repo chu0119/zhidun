@@ -15,6 +15,7 @@ interface ElectronAPI {
   getAppPath: () => Promise<string>
   getVersion: () => Promise<string>
   platform: string
+  httpRequest: (url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) => Promise<{ success: boolean; status?: number; data?: string; error?: string }>
 }
 
 declare global {

@@ -26,4 +26,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Platform
   platform: process.platform,
+
+  // HTTP request (bypasses CORS)
+  httpRequest: (url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) =>
+    ipcRenderer.invoke('http:request', url, options),
 })

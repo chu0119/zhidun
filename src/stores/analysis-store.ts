@@ -3,6 +3,9 @@
 import { create } from 'zustand'
 import type { AnalysisStatus } from '@/types/analysis'
 import type { LogMetadata } from '@/types/log'
+import type { RuleAnalysisResult } from '@/core/rule-engine'
+import type { GeoIPResult } from '@/core/geoip'
+import type { BotStat } from '@/core/bot-detector'
 
 interface AnalysisState {
   // AI 分析状态
@@ -17,6 +20,9 @@ interface AnalysisState {
   localProgressMessages: string[]
   localReportText: string
   localElapsedTime: number
+  localRuleResult: RuleAnalysisResult | null
+  geoIPResults: Map<string, GeoIPResult> | null
+  botStats: BotStat[] | null
 
   // 共享数据
   currentFile: string | null
@@ -43,6 +49,9 @@ interface AnalysisState {
   addLocalProgress: (message: string) => void
   setLocalReportText: (text: string) => void
   setLocalElapsedTime: (t: number) => void
+  setLocalRuleResult: (result: RuleAnalysisResult | null) => void
+  setGeoIPResults: (results: Map<string, GeoIPResult> | null) => void
+  setBotStats: (stats: BotStat[] | null) => void
 
   // Shared Actions
   setCurrentFile: (file: string | null) => void
@@ -72,6 +81,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   localProgressMessages: [],
   localReportText: '',
   localElapsedTime: 0,
+  localRuleResult: null,
+  geoIPResults: null,
+  botStats: null,
 
   // Shared
   currentFile: null,
@@ -116,6 +128,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   setLocalReportText: (text) => set({ localReportText: text }),
   setLocalElapsedTime: (t) => set({ localElapsedTime: t }),
+  setLocalRuleResult: (result) => set({ localRuleResult: result }),
+  setGeoIPResults: (results) => set({ geoIPResults: results }),
+  setBotStats: (stats) => set({ botStats: stats }),
 
   // ---- Shared Actions ----
   setCurrentFile: (file) => set({ currentFile: file }),
@@ -166,6 +181,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       localProgressMessages: [],
       localReportText: '',
       localElapsedTime: 0,
+      localRuleResult: null,
+      geoIPResults: null,
+      botStats: null,
       currentFile: null,
       metadata: null,
       error: null,

@@ -9,6 +9,13 @@ export interface Rule {
   patterns: RegExp[]
   description: string
   remediation: string
+  mitre?: {
+    tactic: string
+    tacticName: string
+    technique?: string
+    techniqueName?: string
+  }
+  cwe?: string
 }
 
 export interface RuleMatch {
@@ -22,6 +29,7 @@ export interface RuleAnalysisResult {
   totalLines: number
   matchedLines: number
   matches: RuleMatch[]
+  aggregatedAlerts: AggregatedAlert[]
   summary: {
     critical: number
     high: number
@@ -644,6 +652,121 @@ const RULES: Rule[] = [
   },
 ]
 
+// ==================== MITRE ATT&CK 映射 ====================
+
+const MITRE_MAPPING: Record<string, { tactic: string; tacticName: string; technique?: string; techniqueName?: string }> = {
+  'SQL注入':       { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  'XSS攻击':      { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1189', techniqueName: 'Drive-by Compromise' },
+  '命令注入':      { tactic: 'TA0002', tacticName: 'Execution', technique: 'T1059', techniqueName: 'Command and Scripting Interpreter' },
+  '目录遍历':      { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  '暴力破解':      { tactic: 'TA0006', tacticName: 'Credential Access', technique: 'T1110', techniqueName: 'Brute Force' },
+  '扫描探测':      { tactic: 'TA0043', tacticName: 'Reconnaissance', technique: 'T1595', techniqueName: 'Active Scanning' },
+  'SSRF攻击':     { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  '文件包含':      { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  '文件上传':      { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  'WebShell':     { tactic: 'TA0003', tacticName: 'Persistence', technique: 'T1505', techniqueName: 'Server Software Component' },
+  'HTTP请求走私':  { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  '反序列化攻击':  { tactic: 'TA0002', tacticName: 'Execution', technique: 'T1059', techniqueName: 'Command and Scripting Interpreter' },
+  'JWT攻击':      { tactic: 'TA0006', tacticName: 'Credential Access', technique: 'T1556', techniqueName: 'Modify Authentication Process' },
+  '模板注入':      { tactic: 'TA0002', tacticName: 'Execution', technique: 'T1059', techniqueName: 'Command and Scripting Interpreter' },
+  'NoSQL注入':    { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  'HTTP头注入':   { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  '开放重定向':    { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1189', techniqueName: 'Drive-by Compromise' },
+  '信息泄露':      { tactic: 'TA0007', tacticName: 'Discovery', technique: 'T1082', techniqueName: 'System Information Discovery' },
+}
+
+// CWE 编号映射
+const CWE_MAPPING: Record<string, string> = {
+  'SQL注入': 'CWE-89',
+  'XSS攻击': 'CWE-79',
+  '命令注入': 'CWE-78',
+  '目录遍历': 'CWE-22',
+  '暴力破解': 'CWE-307',
+  '扫描探测': 'CWE-200',
+  'SSRF攻击': 'CWE-918',
+  '文件包含': 'CWE-98',
+  '文件上传': 'CWE-434',
+  'WebShell': 'CWE-94',
+  'HTTP请求走私': 'CWE-444',
+  '反序列化攻击': 'CWE-502',
+  'JWT攻击': 'CWE-287',
+  '模板注入': 'CWE-1336',
+  'NoSQL注入': 'CWE-943',
+  'HTTP头注入': 'CWE-113',
+  '开放重定向': 'CWE-601',
+  '信息泄露': 'CWE-200',
+}
+
+// 为规则批量注入 MITRE ATT&CK 映射和 CWE 编号
+for (const rule of RULES) {
+  if (!rule.mitre && MITRE_MAPPING[rule.category]) {
+    rule.mitre = MITRE_MAPPING[rule.category]
+  }
+  if (!rule.cwe && CWE_MAPPING[rule.category]) {
+    rule.cwe = CWE_MAPPING[rule.category]
+  }
+}
+
+// ==================== 智能告警去重 ====================
+
+export interface AggregatedAlert {
+  rule: Rule
+  sourceIP: string
+  count: number
+  lineNumbers: number[]
+  firstSeen: string
+  lastSeen: string
+  sampleLine: string
+}
+
+// 从日志行提取源 IP
+function extractSourceIP(line: string): string {
+  // 匹配常见日志格式中的 IP（第一个 IP 通常是客户端 IP）
+  const ipMatch = line.match(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/)
+  return ipMatch ? ipMatch[1] : 'unknown'
+}
+
+// 从日志行提取时间戳
+function extractTimestamp(line: string): string {
+  // 匹配常见时间格式
+  const tsMatch = line.match(/\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}/)
+    || line.match(/\d{2}\/\w{3}\/\d{4}:\d{2}:\d{2}:\d{2}/)
+    || line.match(/\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}/)
+  return tsMatch ? tsMatch[0] : ''
+}
+
+export function deduplicateMatches(matches: RuleMatch[]): AggregatedAlert[] {
+  const map = new Map<string, AggregatedAlert>()
+
+  for (const match of matches) {
+    const ip = extractSourceIP(match.line)
+    const key = `${match.rule.id}::${ip}`
+
+    if (map.has(key)) {
+      const agg = map.get(key)!
+      agg.count++
+      agg.lineNumbers.push(match.lineNumber)
+      const ts = extractTimestamp(match.line)
+      if (ts) {
+        if (!agg.firstSeen || ts < agg.firstSeen) agg.firstSeen = ts
+        if (!agg.lastSeen || ts > agg.lastSeen) agg.lastSeen = ts
+      }
+    } else {
+      map.set(key, {
+        rule: match.rule,
+        sourceIP: ip,
+        count: 1,
+        lineNumbers: [match.lineNumber],
+        firstSeen: extractTimestamp(match.line),
+        lastSeen: extractTimestamp(match.line),
+        sampleLine: match.line,
+      })
+    }
+  }
+
+  return [...map.values()].sort((a, b) => b.count - a.count)
+}
+
 // ==================== 分析引擎 ====================
 
 export function analyzeWithRules(lines: string[], progressCallback?: (msg: string) => void): RuleAnalysisResult {
@@ -686,13 +809,18 @@ export function analyzeWithRules(lines: string[], progressCallback?: (msg: strin
 
   progressCallback?.(`规则扫描完成: 共 ${totalLines} 行，发现 ${matches.length} 条告警`)
 
+  // 智能去重聚合
+  const aggregatedAlerts = deduplicateMatches(matches)
+  progressCallback?.(`去重聚合完成: ${matches.length} 条告警 → ${aggregatedAlerts.length} 条聚合告警`)
+
   // 生成报告
-  const report = generateRuleReport(lines, matches, summary, categoryStats)
+  const report = generateRuleReport(lines, matches, summary, categoryStats, aggregatedAlerts)
 
   return {
     totalLines,
     matchedLines: new Set(matches.map(m => m.lineNumber)).size,
     matches,
+    aggregatedAlerts,
     summary,
     categoryStats,
     report,
@@ -703,7 +831,8 @@ function generateRuleReport(
   lines: string[],
   matches: RuleMatch[],
   summary: { critical: number; high: number; medium: number; low: number },
-  categoryStats: Record<string, number>
+  categoryStats: Record<string, number>,
+  aggregatedAlerts: AggregatedAlert[]
 ): string {
   const now = new Date().toLocaleString()
   const totalThreats = summary.critical + summary.high + summary.medium + summary.low
@@ -735,6 +864,18 @@ function generateRuleReport(
         if (shownRules.size >= 3 || shownRules.has(m.rule.id)) continue
         shownRules.add(m.rule.id)
         report += `     - [${m.rule.id}] ${m.rule.name}: ${m.rule.description}\n`
+        if (m.rule.cwe) {
+          report += `       ${m.rule.cwe}`
+          if (m.rule.mitre) {
+            report += ` | ATT&CK: ${m.rule.mitre.tactic}(${m.rule.mitre.tacticName})`
+            if (m.rule.mitre.technique) report += ` → ${m.rule.mitre.technique}(${m.rule.mitre.techniqueName})`
+          }
+          report += `\n`
+        } else if (m.rule.mitre) {
+          report += `       ATT&CK: ${m.rule.mitre.tactic}(${m.rule.mitre.tacticName})`
+          if (m.rule.mitre.technique) report += ` → ${m.rule.mitre.technique}(${m.rule.mitre.techniqueName})`
+          report += `\n`
+        }
         report += `       行号: ${m.lineNumber}, 匹配: "${m.matchedText.substring(0, 60)}"\n`
       }
       if (categoryMatches.length > 3) {
@@ -771,7 +912,25 @@ function generateRuleReport(
     report += `   • 当前日志未发现明显威胁，建议持续监控\n`
   }
 
-  report += `\n5. 参考依据\n`
+  report += `\n5. 告警聚合统计\n`
+  if (aggregatedAlerts.length > 0) {
+    report += `   共 ${aggregatedAlerts.length} 条聚合告警（按规则+源IP去重）:\n`
+    for (const agg of aggregatedAlerts.slice(0, 10)) {
+      const severityIcon = agg.rule.severity === 'critical' ? '🔴' : agg.rule.severity === 'high' ? '🟠' : agg.rule.severity === 'medium' ? '🟡' : '🔵'
+      report += `   ${severityIcon} [${agg.rule.id}] ${agg.rule.name} | IP: ${agg.sourceIP} | ×${agg.count} 次`
+      if (agg.firstSeen && agg.lastSeen && agg.firstSeen !== agg.lastSeen) {
+        report += ` | ${agg.firstSeen} ~ ${agg.lastSeen}`
+      }
+      report += `\n`
+    }
+    if (aggregatedAlerts.length > 10) {
+      report += `   ... 共 ${aggregatedAlerts.length} 条聚合告警\n`
+    }
+  } else {
+    report += `   无告警\n`
+  }
+
+  report += `\n6. 参考依据\n`
   report += `   • OWASP Top 10 2021\n`
   report += `   • ModSecurity CRS 规则库\n`
   report += `   • MITRE ATT&CK 框架\n`
