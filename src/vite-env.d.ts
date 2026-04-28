@@ -1,0 +1,26 @@
+/// <reference types="vite/client" />
+
+interface ElectronAPI {
+  minimizeWindow: () => void
+  maximizeWindow: () => void
+  closeWindow: () => void
+  isMaximized: () => Promise<boolean>
+  openFile: () => Promise<string | null>
+  saveFile: (options: any) => Promise<string | null>
+  readFile: (filePath: string) => Promise<{ success: boolean; data?: string; size?: number; error?: string }>
+  readTextFile: (filePath: string) => Promise<{ success: boolean; text?: string; encoding?: string; size?: number; error?: string }>
+  writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
+  getFileInfo: (filePath: string) => Promise<{ success: boolean; info?: any; error?: string }>
+  openExternal: (url: string) => void
+  getAppPath: () => Promise<string>
+  getVersion: () => Promise<string>
+  platform: string
+}
+
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI
+  }
+}
+
+export {}

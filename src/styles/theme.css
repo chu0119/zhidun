@@ -1,0 +1,113 @@
+/* ==================== 科技感主题系统 ==================== */
+
+:root {
+  /* 主色板 - Cyber 主题 */
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #0d1428;
+  --bg-card: rgba(13, 20, 40, 0.8);
+  --bg-card-hover: rgba(13, 20, 40, 0.95);
+  --bg-overlay: rgba(10, 14, 26, 0.9);
+
+  --accent-primary: #00f0ff;
+  --accent-secondary: #b400ff;
+  --accent-green: #00ff88;
+  --accent-red: #ff0040;
+  --accent-orange: #ff8800;
+  --accent-yellow: #ffcc00;
+
+  --text-primary: #e0e6f0;
+  --text-secondary: #7a8ba8;
+  --text-dim: #4a5568;
+
+  --border-color: rgba(0, 240, 255, 0.15);
+  --border-glow: rgba(0, 240, 255, 0.3);
+  --glow-color: #00f0ff;
+  --glow-secondary: #b400ff;
+
+  --gradient-primary: linear-gradient(135deg, #00f0ff, #b400ff);
+  --gradient-bg: linear-gradient(180deg, #0a0e1a 0%, #0d1428 100%);
+
+  /* 发光强度 */
+  --glow-sm: 0 0 5px;
+  --glow-md: 0 0 10px;
+  --glow-lg: 0 0 20px;
+  --glow-xl: 0 0 40px;
+}
+
+/* ==================== 主题变体 ==================== */
+
+/* Matrix Green 主题 */
+[data-theme="green"] {
+  --accent-primary: #00ff88;
+  --accent-secondary: #00cc66;
+  --glow-color: #00ff88;
+  --glow-secondary: #00cc66;
+  --border-color: rgba(0, 255, 136, 0.15);
+  --border-glow: rgba(0, 255, 136, 0.3);
+  --gradient-primary: linear-gradient(135deg, #00ff88, #00cc66);
+}
+
+/* Purple 主题 */
+[data-theme="purple"] {
+  --accent-primary: #b400ff;
+  --accent-secondary: #8000cc;
+  --glow-color: #b400ff;
+  --glow-secondary: #8000cc;
+  --border-color: rgba(180, 0, 255, 0.15);
+  --border-glow: rgba(180, 0, 255, 0.3);
+  --gradient-primary: linear-gradient(135deg, #b400ff, #6600cc);
+}
+
+/* Alert Red 主题 */
+[data-theme="red"] {
+  --accent-primary: #ff0040;
+  --accent-secondary: #cc0033;
+  --glow-color: #ff0040;
+  --glow-secondary: #cc0033;
+  --border-color: rgba(255, 0, 64, 0.15);
+  --border-glow: rgba(255, 0, 64, 0.3);
+  --gradient-primary: linear-gradient(135deg, #ff0040, #cc0033);
+}
+
+/* Ocean Blue 主题 */
+[data-theme="ocean"] {
+  --accent-primary: #0088ff;
+  --accent-secondary: #0066cc;
+  --glow-color: #0088ff;
+  --glow-secondary: #0066cc;
+  --border-color: rgba(0, 136, 255, 0.15);
+  --border-glow: rgba(0, 136, 255, 0.3);
+  --gradient-primary: linear-gradient(135deg, #0088ff, #0066cc);
+}
+
+/* Classic Dark 主题 */
+[data-theme="dark"] {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --accent-primary: #e0e6f0;
+  --accent-secondary: #7a8ba8;
+  --glow-color: #e0e6f0;
+  --glow-secondary: #7a8ba8;
+  --border-color: rgba(224, 230, 240, 0.15);
+  --border-glow: rgba(224, 230, 240, 0.3);
+  --gradient-primary: linear-gradient(135deg, #e0e6f0, #7a8ba8);
+}
+
+/* Classic Light 主题 */
+[data-theme="light"] {
+  --bg-primary: #f0f2f5;
+  --bg-secondary: #e8eaf0;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --bg-card-hover: rgba(255, 255, 255, 1);
+  --accent-primary: #0066cc;
+  --accent-secondary: #004499;
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a5568;
+  --text-dim: #7a8ba8;
+  --glow-color: #0066cc;
+  --glow-secondary: #004499;
+  --border-color: rgba(0, 102, 204, 0.2);
+  --border-glow: rgba(0, 102, 204, 0.4);
+  --gradient-primary: linear-gradient(135deg, #0066cc, #004499);
+  --gradient-bg: linear-gradient(180deg, #f0f2f5 0%, #e8eaf0 100%);
+}
