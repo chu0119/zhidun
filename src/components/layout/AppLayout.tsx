@@ -52,8 +52,12 @@ export function AppLayout() {
   const dragCounterRef = React.useRef(0)
 
   const { config, updateConfig } = useConfigStore()
-  const store = useAnalysisStore()
   const { addRecord } = useHistoryStore()
+  const status = useAnalysisStore(s => s.status)
+  const localStatus = useAnalysisStore(s => s.localStatus)
+
+  // 稳定的 store 访问（避免在 useCallback 依赖中使用 store 对象）
+  const getStore = useAnalysisStore.getState
 
   // 加载自定义规则
   useEffect(() => {
@@ -99,8 +103,8 @@ export function AppLayout() {
       : [currentFileValue, currentFileValue]
 
     setActiveTab('local-analysis')
-    store.setLocalStatus('preparing')
-    store.startLocalTimer()
+    getStore().setLocalStatus('preparing')
+    getStore().startLocalTimer()
 
     const s = useAnalysisStore.getState()
     const progressStore = { addProgress: (msg: string) => s.addLocalProgress(msg) }
@@ -118,11 +122,11 @@ export function AppLayout() {
       const preprocessCfg = useConfigStore.getState().config.preprocessConfig
       if (preprocessCfg?.enabled) {
         const { filtered, stats } = preprocessLines(allLines, preprocessCfg)
-        store.addLocalProgress(`[预处理] 过滤 ${stats.filtered} 行，保留 ${stats.passed} 行`)
+        getStore().addLocalProgress(`[预处理] 过滤 ${stats.filtered} 行，保留 ${stats.passed} 行`)
         allLines = filtered
       }
 
-      store.setLogLines(allLines)
+      getStore().setLogLines(allLines)
 
       const parser = new LogParser(fullPath)
       const formatType = parser.detectFormat(allLines)
@@ -134,17 +138,17 @@ export function AppLayout() {
         totalLines: allLines.length,
       }, getStatus)
 
-      store.setLocalStatus('analyzing')
+      getStore().setLocalStatus('analyzing')
       await showLocalAnalysisPhase3(progressStore, allLines.length, getStatus)
 
-      const result = analyzeWithRules(allLines, (msg) => store.addLocalProgress(msg), getCustomRules())
+      const result = analyzeWithRules(allLines, (msg) => getStore().addLocalProgress(msg), getCustomRules())
 
       const elapsed = useAnalysisStore.getState().localElapsedTime
       await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
 
-      store.setLocalReportText(result.report)
-      store.setLocalRuleResult(result)
-      store.setLocalStatus('done')
+      getStore().setLocalReportText(result.report)
+      getStore().setLocalRuleResult(result)
+      getStore().setLocalStatus('done')
 
       setActiveTab('local-report')
 
@@ -166,12 +170,12 @@ export function AppLayout() {
       const ips = extractIPsFromLines(allLines)
       if (ips.length > 0) {
         lookupIPs(ips).then(geoResults => {
-          store.setGeoIPResults(geoResults)
+          getStore().setGeoIPResults(geoResults)
         }).catch(() => {})
       }
 
       const botStats = detectBots(allLines)
-      store.setBotStats(botStats)
+      getStore().setBotStats(botStats)
 
       // 异步告警通知
       const notifConfig = useConfigStore.getState().config.notificationConfig
@@ -179,13 +183,13 @@ export function AppLayout() {
         processAlerts(notifConfig, result.categoryStats, result.summary, displayName).catch(() => {})
       }
     } catch (error: any) {
-      store.setLocalStatus('error')
-      store.setError(error.message)
-      store.addLocalProgress(`错误: ${error.message}`)
+      getStore().setLocalStatus('error')
+      getStore().setError(error.message)
+      getStore().addLocalProgress(`错误: ${error.message}`)
     } finally {
-      store.stopLocalTimer()
+      getStore().stopLocalTimer()
     }
-  }, [store])
+  }, [])
 
   // 注册本地分析触发器（供空状态按钮使用）
   useEffect(() => {
@@ -203,8 +207,8 @@ export function AppLayout() {
       : [currentFileValue, currentFileValue]
 
     setActiveTab('ai-analysis')
-    store.setStatus('preparing')
-    store.startTimer()
+    getStore().setStatus('preparing')
+    getStore().startTimer()
 
     const s = useAnalysisStore.getState()
     const progressStore = { addProgress: (msg: string) => s.addProgress(msg) }
@@ -222,7 +226,7 @@ export function AppLayout() {
       const fileText = fileResult.text || ''
       const allLines = fileText.split('\n').filter((l: string) => l.trim())
       const totalLines = allLines.length
-      store.setLogLines(allLines)
+      getStore().setLogLines(allLines)
 
       const parser = new LogParser(fullPath)
       const formatType = parser.detectFormat(allLines)
@@ -235,7 +239,7 @@ export function AppLayout() {
         config.currentModel.maxTokens
       )
 
-      store.setMetadata({
+      getStore().setMetadata({
         formatType: result.formatType,
         encoding: result.encoding,
         totalLines: result.totalLines,
@@ -253,7 +257,7 @@ export function AppLayout() {
 
       await showPhase3Pre(progressStore, config.currentModel.modelName, getStatus)
 
-      store.setStatus('analyzing')
+      getStore().setStatus('analyzing')
 
       const provider = createAIProvider({
         provider: config.currentModel.provider,
@@ -266,12 +270,12 @@ export function AppLayout() {
       })
 
       const analyzer = new LogAnalyzer(provider)
-      store.setAbortController(analyzer['abortController'] || null)
+      getStore().setAbortController(analyzer['abortController'] || null)
 
       const origStop = analyzer.stop.bind(analyzer)
       analyzer.stop = () => {
         origStop()
-        store.setAbortController(null)
+        getStore().setAbortController(null)
       }
 
       const logContent = compressLogForAI(result.lines, result.formatType)
@@ -288,9 +292,9 @@ export function AppLayout() {
         const elapsed = useAnalysisStore.getState().elapsedTime
         await showPhase4(progressStore, formatElapsed(elapsed), getStatus)
 
-        store.setReportText(report)
-        store.setStatus('done')
-        store.setAbortController(null)
+        getStore().setReportText(report)
+        getStore().setStatus('done')
+        getStore().setAbortController(null)
 
         setActiveTab('ai-report')
 
@@ -307,42 +311,42 @@ export function AppLayout() {
           notes: '',
         })
       } else {
-        store.setStatus('error')
-        store.setError('AI 未返回有效分析结果')
+        getStore().setStatus('error')
+        getStore().setError('AI 未返回有效分析结果')
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        store.addProgress('分析已被用户停止')
+        getStore().addProgress('分析已被用户停止')
       } else {
-        store.setStatus('error')
-        store.setError(error.message)
+        getStore().setStatus('error')
+        getStore().setError(error.message)
       }
     } finally {
-      store.stopTimer()
-      store.setAbortController(null)
+      getStore().stopTimer()
+      getStore().setAbortController(null)
     }
-  }, [config, store])
+  }, [config])
 
   // ===== 停止分析 =====
   const handleStopAnalysis = useCallback(() => {
     const { abortController, status } = useAnalysisStore.getState()
     if (status === 'preparing' || status === 'analyzing') {
-      store.setStatus('stopped')
-      store.stopTimer()
+      getStore().setStatus('stopped')
+      getStore().stopTimer()
       if (abortController) {
         abortController.abort()
-        store.setAbortController(null)
+        getStore().setAbortController(null)
       }
     }
-  }, [store])
+  }, [])
 
   const handleStopLocalAnalysis = useCallback(() => {
     const { localStatus } = useAnalysisStore.getState()
     if (localStatus === 'preparing' || localStatus === 'analyzing') {
-      store.setLocalStatus('stopped')
-      store.stopLocalTimer()
+      getStore().setLocalStatus('stopped')
+      getStore().stopLocalTimer()
     }
-  }, [store])
+  }, [])
 
   const handleExportReport = useCallback(async (format: 'docx' | 'pdf') => {
     const { reportText, localReportText, currentFile } = useAnalysisStore.getState()
@@ -355,11 +359,11 @@ export function AppLayout() {
       } else {
         await exportToDocx(text, currentFile || 'report')
       }
-      store.addProgress(`报告已导出为 ${format.toUpperCase()} 格式`)
+      getStore().addProgress(`报告已导出为 ${format.toUpperCase()} 格式`)
     } catch (error: any) {
-      store.addProgress(`导出失败: ${error.message}`)
+      getStore().addProgress(`导出失败: ${error.message}`)
     }
-  }, [store])
+  }, [])
 
   // ===== 批量分析 =====
   const handleStartBatch = useCallback(async () => {
@@ -537,7 +541,7 @@ export function AppLayout() {
   // 根据当前 tab 决定显示的分析状态
   const isAiTab = activeTab === 'ai-analysis' || activeTab === 'ai-report'
   const isLocalTab = activeTab === 'local-analysis' || activeTab === 'local-report' || activeTab === 'threat' || activeTab === 'attack' || activeTab === 'session'
-  const currentStatus = isAiTab ? store.status : isLocalTab ? store.localStatus : 'idle'
+  const currentStatus = isAiTab ? status : isLocalTab ? localStatus : 'idle'
   const isAnalyzing = currentStatus === 'analyzing' || currentStatus === 'preparing'
 
   // Tab 定义
