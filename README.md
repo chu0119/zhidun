@@ -40,7 +40,7 @@
 <br/>
 
 ![Version](https://img.shields.io/badge/VERSION-1.6.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
-![License](https://img.shields.io/badge/LICENSE-MIT-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
+![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
 <br/>
@@ -477,7 +477,16 @@ npm run build
 
 ## `◈` 许可证
 
-[MIT License](LICENSE) — 星川智盾安全团队
+本项目采用 **[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)** 许可证。
+
+这意味着你可以自由地使用、修改和分发本软件，但必须遵守以下条款：
+
+- **开源义务** — 任何基于本软件的衍生作品必须同样以 AGPL-3.0 开源
+- **网络服务** — 如果你通过网络提供本软件的服务（SaaS），必须向用户提供完整源代码
+- **保留声明** — 必须保留原始版权声明和许可证文本
+- **禁止闭源** — 不允许将本软件或其衍生作品闭源分发
+
+> 如需商业授权或许可证豁免，请联系项目维护者。
 
 ---
 
