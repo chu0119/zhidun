@@ -1,12 +1,125 @@
 // 详细报告面板
 
 import React, { useState, useRef, useMemo } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { MITRE_TACTIC_COLORS, MITRE_TACTIC_NAMES } from '@/core/constants'
 import type { RuleMatch } from '@/core/rule-engine'
 
 interface ReportPanelProps {
   mode: 'ai' | 'local'
+}
+
+// Markdown 自定义组件（赛博朋克主题）
+const markdownComponents = {
+  h1: ({ children }: any) => (
+    <h1 className="font-orbitron font-bold text-[var(--accent-primary)] text-xl mt-6 mb-3 tracking-wider"
+      style={{ textShadow: '0 0 15px var(--glow-color)' }}>
+      {children}
+    </h1>
+  ),
+  h2: ({ children }: any) => (
+    <div className="my-5">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--accent-primary)] to-transparent opacity-50" />
+        <h2 className="font-orbitron font-bold text-[var(--accent-primary)] tracking-wider"
+          style={{ textShadow: '0 0 12px var(--glow-color)', fontSize: '1.2em' }}>
+          {children}
+        </h2>
+        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[var(--accent-primary)] to-transparent opacity-50" />
+      </div>
+    </div>
+  ),
+  h3: ({ children }: any) => (
+    <h3 className="font-bold text-[var(--text-primary)] mt-4 mb-2 flex items-center gap-2"
+      style={{ fontSize: '1.05em' }}>
+      <span className="inline-block w-1.5 h-4 rounded-full bg-[var(--accent-primary)]" />
+      {children}
+    </h3>
+  ),
+  h4: ({ children }: any) => (
+    <h4 className="font-bold text-[var(--text-primary)] mt-3 mb-1.5" style={{ fontSize: '0.95em' }}>
+      {children}
+    </h4>
+  ),
+  p: ({ children }: any) => (
+    <p className="text-[var(--text-secondary)] leading-7 mb-2">{children}</p>
+  ),
+  strong: ({ children }: any) => (
+    <strong className="font-bold text-[var(--text-primary)]">{children}</strong>
+  ),
+  em: ({ children }: any) => (
+    <em className="italic text-[var(--accent-cyan)]">{children}</em>
+  ),
+  ul: ({ children }: any) => (
+    <ul className="pl-4 my-2 space-y-1">{children}</ul>
+  ),
+  ol: ({ children }: any) => (
+    <ol className="pl-4 my-2 space-y-1 list-decimal">{children}</ol>
+  ),
+  li: ({ children }: any) => (
+    <li className="text-[var(--text-secondary)] leading-7 flex items-start gap-2">
+      <span className="text-[var(--accent-cyan)] mt-0.5 shrink-0">▸</span>
+      <span>{children}</span>
+    </li>
+  ),
+  code: ({ inline, className, children, ...props }: any) => {
+    if (inline) {
+      return (
+        <code className="px-1.5 py-0.5 rounded bg-[var(--accent-primary)]/10 text-[var(--accent-cyan)] font-mono text-sm border border-[var(--accent-primary)]/20"
+          {...props}>
+          {children}
+        </code>
+      )
+    }
+    return (
+      <code className="block p-3 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-color)] font-mono text-sm text-[var(--accent-green)] overflow-x-auto leading-6"
+        {...props}>
+        {children}
+      </code>
+    )
+  },
+  pre: ({ children }: any) => (
+    <pre className="my-3 rounded-lg overflow-hidden border border-[var(--border-color)]">
+      {children}
+    </pre>
+  ),
+  table: ({ children }: any) => (
+    <div className="my-3 overflow-x-auto rounded-lg border border-[var(--border-color)]">
+      <table className="w-full text-sm border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: any) => (
+    <thead className="bg-[var(--accent-primary)]/10">{children}</thead>
+  ),
+  th: ({ children }: any) => (
+    <th className="px-3 py-2 text-left font-bold text-[var(--accent-primary)] border-b border-[var(--border-color)] whitespace-nowrap">
+      {children}
+    </th>
+  ),
+  td: ({ children }: any) => (
+    <td className="px-3 py-2 text-[var(--text-secondary)] border-b border-[var(--border-color)]/50">
+      {children}
+    </td>
+  ),
+  tr: ({ children }: any) => (
+    <tr className="hover:bg-[var(--accent-primary)]/5 transition-colors">{children}</tr>
+  ),
+  blockquote: ({ children }: any) => (
+    <blockquote className="pl-4 my-3 border-l-2 border-[var(--accent-purple)] text-[var(--text-dim)] italic">
+      {children}
+    </blockquote>
+  ),
+  hr: () => (
+    <hr className="my-4 border-0 h-px bg-gradient-to-r from-transparent via-[var(--accent-primary)]/30 to-transparent" />
+  ),
+  a: ({ href, children }: any) => (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      className="text-[var(--accent-cyan)] hover:text-[var(--accent-primary)] underline underline-offset-2 transition-colors">
+      {children}
+    </a>
+  ),
 }
 
 export function ReportPanel({ mode }: ReportPanelProps) {
@@ -185,12 +298,12 @@ export function ReportPanel({ mode }: ReportPanelProps) {
     )
   }
 
-  const renderReport = (text: string) => {
+  // 本地报告渲染（自定义解析器，处理规则引擎输出的特殊格式）
+  const renderLocalReport = (text: string) => {
     if (!text) return null
 
     const lines = text.split('\n')
     const result: React.ReactNode[] = []
-    let currentRuleId: string | null = null
 
     for (let i = 0; i < lines.length; i++) {
       const stripped = lines[i].trim()
@@ -232,7 +345,7 @@ export function ReportPanel({ mode }: ReportPanelProps) {
         continue
       }
 
-      // ATT&CK / CWE 行（来自 rule-engine 报告）
+      // ATT&CK / CWE 行
       if (stripped.startsWith('ATT&CK:') || stripped.startsWith('CWE-')) {
         const mitreMatch = stripped.match(/ATT&CK:\s*(TA\d+)\(([^)]+)\)(?:\s*→\s*(T\d+)\(([^)]+)\))?/)
         const cweMatch = stripped.match(/(CWE-\d+)/)
@@ -261,13 +374,11 @@ export function ReportPanel({ mode }: ReportPanelProps) {
         continue
       }
 
-      // 告警条目（含规则ID）+ 附加详情面板
+      // 告警条目（含规则ID）
       const ruleIdMatch = stripped.match(/\[([A-Z]+-\d+)\]/)
       if (ruleIdMatch) {
         const ruleId = ruleIdMatch[1]
-        currentRuleId = ruleId
 
-        // 风险等级标签
         const riskMatch = stripped.match(/(危急|高危|中危|低危)/)
         if (riskMatch) {
           const levelMap: Record<string, string> = {
@@ -284,12 +395,10 @@ export function ReportPanel({ mode }: ReportPanelProps) {
               })}
             </div>
           )
-          // 在告警行后插入详情面板
           result.push(<React.Fragment key={`${i}-detail`}>{renderAlertDetail(ruleId)}</React.Fragment>)
           continue
         }
 
-        // 一般告警行
         const content = stripped.replace(/\*\*/g, '')
         result.push(
           <div key={i} className="text-[var(--text-secondary)] pl-4 leading-7 animate-fade-in">
@@ -300,7 +409,7 @@ export function ReportPanel({ mode }: ReportPanelProps) {
         continue
       }
 
-      // 风险等级标签（无规则ID）
+      // 风险等级标签
       const riskMatch = stripped.match(/(危急|高危|中危|低危)/)
       if (riskMatch) {
         const levelMap: Record<string, string> = {
@@ -426,7 +535,17 @@ export function ReportPanel({ mode }: ReportPanelProps) {
                 </div>
               </div>
             )}
-            {renderReport(reportText)}
+
+            {/* AI 报告：react-markdown 渲染 | 本地报告：自定义解析器 */}
+            {mode === 'ai' ? (
+              <div className="report-markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {reportText}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              renderLocalReport(reportText)
+            )}
           </div>
         )}
       </div>

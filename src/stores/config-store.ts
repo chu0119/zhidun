@@ -34,6 +34,7 @@ const DEFAULT_CONFIG: AppConfig = {
     analysis: 13,
     report: 14,
     charts: 12,
+    panels: 13,
   },
   windowWidth: 1400,
   windowHeight: 900,

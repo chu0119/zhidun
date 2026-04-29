@@ -13,7 +13,7 @@ import {
 export function CompliancePanel() {
   const localRuleResult = useAnalysisStore(s => s.localRuleResult)
   const currentFile = useAnalysisStore(s => s.currentFile)
-  const localStatus = useAnalysisStore(s => s.localStatus)
+  const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
   const triggerAnalysis = useAppStore(s => s.localAnalysisTrigger)
   const frameworks = getAvailableFrameworks()
   const [selectedFramework, setSelectedFramework] = useState<string>('owasp-top10')
@@ -33,7 +33,7 @@ export function CompliancePanel() {
       <div className="h-full flex items-center justify-center">
         <div className="text-center text-[var(--text-dim)]">
           <div className="text-sm">请先运行本地规则分析以生成合规报告</div>
-          {currentFile && localStatus === 'idle' && triggerAnalysis && (
+          {currentFile && preprocessStatus === 'idle' && triggerAnalysis && (
             <button onClick={triggerAnalysis}
               className="mt-4 px-5 py-2 text-xs rounded-lg bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]
                 hover:bg-[var(--accent-primary)]/30 border border-[var(--accent-primary)]/30 transition-all

@@ -4,22 +4,84 @@ import React, { useMemo, useState } from 'react'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useAppStore } from '@/stores/app-store'
 
+interface AttackEntry {
+  rule: string
+  category: string
+  severity: string
+  lineNumber: number
+  line: string
+  matchedText: string
+}
+
 interface Session {
   ip: string
-  attacks: { rule: string; category: string; severity: string; lineNumber: number; line: string }[]
+  attacks: AttackEntry[]
   categories: Set<string>
   maxSeverity: string
   firstLine: number
   lastLine: number
 }
 
+function getSeverityColor(sev: string) {
+  switch (sev) {
+    case 'critical': return '#ff003c'
+    case 'high': return '#ff6600'
+    case 'medium': return '#ffaa00'
+    default: return '#00f0ff'
+  }
+}
+
+function getSeverityLabel(sev: string) {
+  switch (sev) {
+    case 'critical': return '严重'
+    case 'high': return '高危'
+    case 'medium': return '中危'
+    default: return '低危'
+  }
+}
+
+// 高亮匹配文本的组件
+function HighlightedLog({ line, matchedText, color }: { line: string; matchedText: string; color: string }) {
+  if (!matchedText || !line.includes(matchedText)) {
+    return (
+      <div className="font-mono text-[11px] text-[var(--text-secondary)] break-all leading-relaxed">
+        {line}
+        {matchedText && !line.includes(matchedText) && (
+          <div className="mt-1.5 pt-1.5 border-t border-[var(--border-color)]">
+            <span className="text-[10px] text-[var(--text-dim)]">匹配内容: </span>
+            <span className="font-mono text-[11px]" style={{ color, background: color + '15', padding: '1px 3px', borderRadius: '2px' }}>
+              {matchedText}
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const idx = line.indexOf(matchedText)
+  const before = line.slice(0, idx)
+  const match = line.slice(idx, idx + matchedText.length)
+  const after = line.slice(idx + matchedText.length)
+
+  return (
+    <div className="font-mono text-[11px] text-[var(--text-secondary)] break-all leading-relaxed">
+      {before}
+      <mark style={{ background: color + '30', color, padding: '1px 2px', borderRadius: '2px' }}>
+        {match}
+      </mark>
+      {after}
+    </div>
+  )
+}
+
 export function AttackSessionPanel() {
   const ruleResult = useAnalysisStore(s => s.localRuleResult)
   const logLines = useAnalysisStore(s => s.logLines)
   const currentFile = useAnalysisStore(s => s.currentFile)
-  const localStatus = useAnalysisStore(s => s.localStatus)
+  const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
   const triggerAnalysis = useAppStore(s => s.localAnalysisTrigger)
   const [selectedIP, setSelectedIP] = useState<string | null>(null)
+  const [expandedAttacks, setExpandedAttacks] = useState<Set<number>>(new Set())
 
   // 按 IP 分组攻击会话
   const sessions = useMemo(() => {
@@ -49,6 +111,7 @@ export function AttackSessionPanel() {
         severity: match.rule.severity,
         lineNumber: match.lineNumber,
         line: match.line,
+        matchedText: match.matchedText,
       })
       session.categories.add(match.rule.category)
       session.lastLine = Math.max(session.lastLine, match.lineNumber)
@@ -65,6 +128,22 @@ export function AttackSessionPanel() {
 
   const selectedSession = selectedIP ? sessions.find(s => s.ip === selectedIP) : null
 
+  // 切换展开状态
+  const toggleExpand = (idx: number) => {
+    setExpandedAttacks(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  // 切换 IP 时清空展开状态
+  const handleSelectIP = (ip: string) => {
+    setSelectedIP(ip)
+    setExpandedAttacks(new Set())
+  }
+
   if (!ruleResult) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -74,7 +153,7 @@ export function AttackSessionPanel() {
             <circle cx="9" cy="7" r="4" />
           </svg>
           <div className="text-sm">请先运行本地规则分析</div>
-          {currentFile && localStatus === 'idle' && triggerAnalysis && (
+          {currentFile && preprocessStatus === 'idle' && triggerAnalysis && (
             <button onClick={triggerAnalysis}
               className="mt-4 px-5 py-2 text-xs rounded-lg bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]
                 hover:bg-[var(--accent-primary)]/30 border border-[var(--accent-primary)]/30 transition-all
@@ -87,24 +166,6 @@ export function AttackSessionPanel() {
     )
   }
 
-  const getSeverityColor = (sev: string) => {
-    switch (sev) {
-      case 'critical': return '#ff003c'
-      case 'high': return '#ff6600'
-      case 'medium': return '#ffaa00'
-      default: return '#00f0ff'
-    }
-  }
-
-  const getSeverityLabel = (sev: string) => {
-    switch (sev) {
-      case 'critical': return '严重'
-      case 'high': return '高危'
-      case 'medium': return '中危'
-      default: return '低危'
-    }
-  }
-
   return (
     <div className="h-full flex gap-4 overflow-hidden">
       {/* 左侧: 会话列表 */}
@@ -115,7 +176,7 @@ export function AttackSessionPanel() {
         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
           {sessions.map(session => (
             <div key={session.ip}
-              onClick={() => setSelectedIP(session.ip)}
+              onClick={() => handleSelectIP(session.ip)}
               className={`p-3 rounded-lg cursor-pointer transition-all border ${
                 selectedIP === session.ip
                   ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10'
@@ -172,20 +233,72 @@ export function AttackSessionPanel() {
                   {selectedSession.attacks.length} 次攻击 · 行 {selectedSession.firstLine}-{selectedSession.lastLine}
                 </span>
               </div>
+              <button
+                onClick={() => {
+                  if (expandedAttacks.size === selectedSession.attacks.length) {
+                    setExpandedAttacks(new Set())
+                  } else {
+                    setExpandedAttacks(new Set(selectedSession.attacks.map((_, i) => i)))
+                  }
+                }}
+                className="text-xs text-[var(--accent-primary)] hover:text-[var(--accent-primary)]/80 transition-colors">
+                {expandedAttacks.size === selectedSession.attacks.length ? '全部收起' : '全部展开'}
+              </button>
             </div>
 
             {/* 攻击序列 */}
             <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
-              {selectedSession.attacks.map((attack, idx) => (
-                <div key={idx} className="flex items-start gap-3 p-2 rounded bg-[var(--bg-primary)] text-xs">
-                  <span className="text-[var(--text-dim)] w-8 text-right shrink-0">#{attack.lineNumber}</span>
-                  <span className="px-1.5 py-0.5 rounded shrink-0"
-                    style={{ background: getSeverityColor(attack.severity) + '20', color: getSeverityColor(attack.severity) }}>
-                    {attack.category}
-                  </span>
-                  <span className="text-[var(--text-primary)] flex-1 truncate">{attack.rule}</span>
-                </div>
-              ))}
+              {selectedSession.attacks.map((attack, idx) => {
+                const isExpanded = expandedAttacks.has(idx)
+                const color = getSeverityColor(attack.severity)
+
+                return (
+                  <div key={idx} className="rounded bg-[var(--bg-primary)] overflow-hidden">
+                    {/* 条目头部（可点击） */}
+                    <div
+                      onClick={() => toggleExpand(idx)}
+                      className="flex items-start gap-3 p-2 text-xs cursor-pointer hover:bg-[var(--bg-secondary)]/50 transition-colors">
+                      <span className="text-[var(--text-dim)] w-8 text-right shrink-0">#{attack.lineNumber}</span>
+                      <span className="px-1.5 py-0.5 rounded shrink-0"
+                        style={{ background: color + '20', color }}>
+                        {attack.category}
+                      </span>
+                      <span className="text-[var(--text-primary)] flex-1 truncate">{attack.rule}</span>
+                      <span className="text-[var(--text-dim)] shrink-0 text-[10px]">
+                        {isExpanded ? '▼' : '▶'}
+                      </span>
+                    </div>
+
+                    {/* 展开区域 */}
+                    {isExpanded && (
+                      <div className="px-2 pb-2 border-t border-[var(--border-color)]">
+                        {/* 匹配内容（高亮） */}
+                        <div className="mt-2">
+                          <div className="text-[10px] text-[var(--text-dim)] mb-1">匹配内容:</div>
+                          <div className="p-2 rounded bg-[var(--bg-secondary)] overflow-x-auto">
+                            <HighlightedLog
+                              line={attack.line}
+                              matchedText={attack.matchedText}
+                              color={color}
+                            />
+                          </div>
+                        </div>
+
+                        {/* 匹配到的具体文本 */}
+                        {attack.matchedText && (
+                          <div className="mt-2">
+                            <div className="text-[10px] text-[var(--text-dim)] mb-1">触发规则的特征字符串:</div>
+                            <div className="p-1.5 rounded text-[11px] font-mono break-all"
+                              style={{ background: color + '10', color, border: `1px solid ${color}30` }}>
+                              {attack.matchedText}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </>
         )}

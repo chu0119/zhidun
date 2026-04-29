@@ -224,4 +224,28 @@ function setupIPC() {
       return { success: false, error: error.message }
     }
   })
+
+  // GeoIP 离线查询（使用 geoip-lite）
+  ipcMain.handle('geoip:lookup', async (_, ips: string[]) => {
+    try {
+      const geoip = require('geoip-lite')
+      const results: Record<string, any> = {}
+      for (const ip of ips) {
+        const r = geoip.lookup(ip)
+        if (r) {
+          results[ip] = {
+            country: r.country || '',
+            region: r.region || '',
+            city: r.city || '',
+            lat: r.ll?.[0] || 0,
+            lon: r.ll?.[1] || 0,
+            timezone: r.timezone || '',
+          }
+        }
+      }
+      return { success: true, results }
+    } catch (error: any) {
+      return { success: false, error: error.message, results: {} }
+    }
+  })
 }

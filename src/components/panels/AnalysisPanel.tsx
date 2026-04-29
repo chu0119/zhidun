@@ -12,8 +12,9 @@ export function AnalysisPanel({ mode }: AnalysisPanelProps) {
     s => mode === 'ai' ? s.progressMessages : s.localProgressMessages
   )
   const status = useAnalysisStore(
-    s => mode === 'ai' ? s.status : s.localStatus
+    s => mode === 'ai' ? s.status : s.preprocessStatus
   )
+  const error = useAnalysisStore(s => mode === 'ai' ? s.error : null)
   const thinkingContent = useAnalysisStore(s => mode === 'ai' ? s.thinkingContent : '')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [showThinking, setShowThinking] = React.useState(false)
@@ -90,6 +91,19 @@ export function AnalysisPanel({ mode }: AnalysisPanelProps) {
                 </div>
               )
             })}
+            {status === 'error' && (
+              <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                <div className="flex items-center gap-2 text-red-400 text-xs font-medium mb-1">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="15" y1="9" x2="9" y2="15" />
+                    <line x1="9" y1="9" x2="15" y2="15" />
+                  </svg>
+                  分析失败
+                </div>
+                {error && <div className="text-xs text-red-300/80">{error}</div>}
+              </div>
+            )}
             {(status === 'analyzing' || status === 'preparing') && (
               <div className="flex items-center gap-3 mt-2">
                 <div className="relative w-4 h-4">

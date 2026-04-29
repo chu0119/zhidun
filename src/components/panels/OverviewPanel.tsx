@@ -1,7 +1,7 @@
 // 分析概览面板 - 风险评分、攻击分布、Top IP、告警时间线
 
 import React, { useMemo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import { ScalingChart } from '@/components/common/ScalingChart'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useAppStore } from '@/stores/app-store'
@@ -11,7 +11,7 @@ export function OverviewPanel() {
   const reportText = useAnalysisStore(s => s.localReportText)
   const geoResults = useAnalysisStore(s => s.geoIPResults)
   const currentFile = useAnalysisStore(s => s.currentFile)
-  const localStatus = useAnalysisStore(s => s.localStatus)
+  const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
   const cyberTheme = useThemeStore(s => s.currentTheme)
   const triggerAnalysis = useAppStore(s => s.localAnalysisTrigger)
 
@@ -120,7 +120,7 @@ export function OverviewPanel() {
           </svg>
           <div className="text-sm">请先运行本地规则分析</div>
           <div className="text-xs mt-1">分析完成后将在此显示概览数据</div>
-          {currentFile && localStatus === 'idle' && triggerAnalysis && (
+          {currentFile && preprocessStatus === 'idle' && triggerAnalysis && (
             <button onClick={triggerAnalysis}
               className="mt-4 px-5 py-2 text-xs rounded-lg bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]
                 hover:bg-[var(--accent-primary)]/30 border border-[var(--accent-primary)]/30 transition-all
@@ -128,7 +128,7 @@ export function OverviewPanel() {
               开始本地分析
             </button>
           )}
-          {localStatus !== 'idle' && localStatus !== 'done' && (
+          {preprocessStatus !== 'idle' && preprocessStatus !== 'done' && (
             <div className="mt-4 text-xs text-[var(--accent-primary)] animate-pulse">分析中...</div>
           )}
         </div>
@@ -180,7 +180,7 @@ export function OverviewPanel() {
         <div className="glass-card p-4">
           <div className="text-xs font-orbitron text-[var(--accent-primary)] tracking-wider mb-3">攻击类型分布</div>
           {categoryPieOption && (
-            <ReactECharts option={categoryPieOption} style={{ height: 220 }} />
+            <ScalingChart option={categoryPieOption} baseHeight={220} />
           )}
         </div>
 
@@ -188,7 +188,7 @@ export function OverviewPanel() {
         <div className="glass-card p-4">
           <div className="text-xs font-orbitron text-[var(--accent-primary)] tracking-wider mb-3">严重级别分布</div>
           {severityBarOption && (
-            <ReactECharts option={severityBarOption} style={{ height: 220 }} />
+            <ScalingChart option={severityBarOption} baseHeight={220} />
           )}
         </div>
       </div>

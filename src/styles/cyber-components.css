@@ -326,3 +326,32 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 240, 255, 0.5);
 }
+
+/* 动画 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* 报告 Markdown 容器 */
+.report-markdown {
+  line-height: 1.8;
+}
+
+.report-markdown pre {
+  position: relative;
+}
+
+.report-markdown pre::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-primary), transparent);
+}

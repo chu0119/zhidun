@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   httpRequest: (url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) =>
     ipcRenderer.invoke('http:request', url, options),
 
+  // GeoIP offline lookup
+  geoipLookup: (ips: string[]) => ipcRenderer.invoke('geoip:lookup', ips),
+
   // Menu events listener
   onMenuAction: (callback: (action: string) => void) => {
     const handler = (_event: any, action: string) => callback(action)

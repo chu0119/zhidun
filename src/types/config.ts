@@ -17,6 +17,7 @@ export interface FontSizes {
   analysis: number
   report: number
   charts: number
+  panels: number
 }
 
 export interface AppConfig {

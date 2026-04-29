@@ -1,7 +1,7 @@
 // 路径分析面板 - URL 路径访问排行、路径攻击热力图、路径参数分析
 
 import React, { useMemo } from 'react'
-import ReactECharts from 'echarts-for-react'
+import { ScalingChart } from '@/components/common/ScalingChart'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useAppStore } from '@/stores/app-store'
@@ -10,7 +10,7 @@ export function PathAnalysisPanel() {
   const ruleResult = useAnalysisStore(s => s.localRuleResult)
   const logLines = useAnalysisStore(s => s.logLines)
   const currentFile = useAnalysisStore(s => s.currentFile)
-  const localStatus = useAnalysisStore(s => s.localStatus)
+  const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
   const cyberTheme = useThemeStore(s => s.currentTheme)
   const triggerAnalysis = useAppStore(s => s.localAnalysisTrigger)
 
@@ -72,48 +72,57 @@ export function PathAnalysisPanel() {
       }))
   }, [pathStats])
 
-  // Top 路径柱状图
+  // Top 路径柱状图（蝴蝶图：攻击向左，正常向右）
   const topPathOption = useMemo(() => {
     const top15 = pathStats.slice(0, 15)
     if (top15.length === 0) return null
+
+    const reversedPaths = top15.map(([path]) => path.length > 30 ? '...' + path.slice(-27) : path).reverse()
+    const reversedAttack = top15.map(([_, data]) => -data.attacks).reverse()
+    const reversedNormal = top15.map(([_, data]) => data.total - data.attacks).reverse()
 
     return {
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'axis',
         formatter: (params: any) => {
-          const data = params[0]
-          const [path, stats] = top15[data.dataIndex]
-          return `${path}<br/>访问: ${stats.total} 次<br/>攻击: ${stats.attacks} 次`
+          if (!params || params.length === 0) return ''
+          const idx = params[0].dataIndex
+          const [path, stats] = top15[top15.length - 1 - idx]
+          return `${path}<br/>访问: <b>${stats.total}</b> 次<br/>正常: ${stats.total - stats.attacks} 次<br/>攻击: <span style="color:#ff003c">${stats.attacks}</span> 次`
         },
       },
       grid: { top: 10, right: 10, bottom: 5, left: 10 },
       xAxis: {
         type: 'value',
-        axisLabel: { color: '#999', fontSize: 10 },
+        axisLabel: {
+          color: '#999',
+          fontSize: 10,
+          formatter: (v: number) => Math.abs(v).toString(),
+        },
         splitLine: { lineStyle: { color: '#222' } },
       },
       yAxis: {
         type: 'category',
-        data: top15.map(([path]) => path.length > 30 ? '...' + path.slice(-27) : path).reverse(),
-        axisLabel: { color: '#999', fontSize: 9, width: 120, overflow: 'truncate' },
+        data: reversedPaths,
+        axisLabel: { color: '#ccc', fontSize: 9, width: 130, overflow: 'truncate', align: 'center' },
         axisLine: { lineStyle: { color: '#333' } },
+        axisTick: { show: false },
       },
       series: [
         {
           type: 'bar',
-          data: top15.map(([_, data]) => data.total - data.attacks).reverse(),
-          stack: 'total',
-          itemStyle: { color: accentColor + '60' },
+          data: reversedAttack,
+          itemStyle: { color: '#ff003c', borderRadius: [4, 0, 0, 4] },
           barWidth: '60%',
-          name: '正常',
+          name: '攻击',
         },
         {
           type: 'bar',
-          data: top15.map(([_, data]) => data.attacks).reverse(),
-          stack: 'total',
-          itemStyle: { color: '#ff003c' },
-          name: '攻击',
+          data: reversedNormal,
+          itemStyle: { color: accentColor + '60', borderRadius: [0, 4, 4, 0] },
+          barWidth: '60%',
+          name: '正常',
         },
       ],
     }
@@ -162,7 +171,7 @@ export function PathAnalysisPanel() {
             <path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14" />
           </svg>
           <div className="text-sm">请先加载日志文件并运行分析</div>
-          {currentFile && localStatus === 'idle' && triggerAnalysis && (
+          {currentFile && preprocessStatus === 'idle' && triggerAnalysis && (
             <button onClick={triggerAnalysis}
               className="mt-4 px-5 py-2 text-xs rounded-lg bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]
                 hover:bg-[var(--accent-primary)]/30 border border-[var(--accent-primary)]/30 transition-all
@@ -183,13 +192,13 @@ export function PathAnalysisPanel() {
           <div className="text-xs font-orbitron text-[var(--accent-primary)] tracking-wider mb-3">
             URL 路径访问排行 Top 15
           </div>
-          {topPathOption && <ReactECharts option={topPathOption} style={{ height: 350 }} />}
+          <ScalingChart option={topPathOption} baseHeight={350} />
         </div>
         <div className="glass-card p-4">
           <div className="text-xs font-orbitron text-[var(--accent-primary)] tracking-wider mb-3">
             HTTP 方法分布
           </div>
-          {methodPieOption && <ReactECharts option={methodPieOption} style={{ height: 350 }} />}
+          <ScalingChart option={methodPieOption} baseHeight={350} />
         </div>
       </div>
 

@@ -1,22 +1,22 @@
 // 左侧控制面板
 
-import React, { useRef, useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useConfigStore } from '@/stores/config-store'
 import { PROVIDER_INFO } from '@/core/constants'
 import { formatTime } from '@/utils/helpers'
 
 interface SidebarProps {
-  onStartAnalysis: () => void
-  onStopAnalysis: () => void
-  onLocalAnalysis: () => void
+  onPreprocess: () => void
+  onAIAnalysis: () => void
+  onStop: () => void
   onExportReport: (format: 'docx' | 'pdf') => void
 }
 
-export function Sidebar({ onStartAnalysis, onStopAnalysis, onLocalAnalysis, onExportReport }: SidebarProps) {
-  const { config, updateModel, updateConfig } = useConfigStore()
+export function Sidebar({ onPreprocess, onAIAnalysis, onStop, onExportReport }: SidebarProps) {
+  const { config, updateModel } = useConfigStore()
   const status = useAnalysisStore(s => s.status)
-  const localStatus = useAnalysisStore(s => s.localStatus)
+  const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
   const currentFile = useAnalysisStore(s => s.currentFile)
   const elapsedTime = useAnalysisStore(s => s.elapsedTime)
   const localElapsedTime = useAnalysisStore(s => s.localElapsedTime)
@@ -28,10 +28,19 @@ export function Sidebar({ onStartAnalysis, onStopAnalysis, onLocalAnalysis, onEx
   const [fileName, setFileName] = useState<string>('')
   const [filePath, setFilePath] = useState<string>('')
 
+  // 当 store 中 currentFile 被清空时（如点击清空输出），同步清空本地状态
+  useEffect(() => {
+    if (!currentFile) {
+      setFileName('')
+      setFilePath('')
+    }
+  }, [currentFile])
+
   const isAiAnalyzing = status === 'analyzing' || status === 'preparing'
-  const isLocalAnalyzing = localStatus === 'analyzing' || localStatus === 'preparing'
-  const isAnalyzing = isAiAnalyzing || isLocalAnalyzing
-  const displayTime = isLocalAnalyzing ? localElapsedTime : elapsedTime
+  const isPreprocessing = preprocessStatus === 'analyzing' || preprocessStatus === 'preparing'
+  const isRunning = isAiAnalyzing || isPreprocessing
+  const displayTime = isPreprocessing ? localElapsedTime : elapsedTime
+  const preprocessDone = preprocessStatus === 'done'
 
   const handleSelectFile = async () => {
     const path = await window.electronAPI.openFile()
@@ -158,37 +167,6 @@ export function Sidebar({ onStartAnalysis, onStopAnalysis, onLocalAnalysis, onEx
         />
       </div>
 
-      {/* 分析参数 */}
-      <div className="glass-card p-4 corner-decor">
-        <div className="text-xs font-orbitron text-[var(--accent-primary)] tracking-wider mb-3 uppercase">
-          分析参数
-        </div>
-
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-[var(--text-secondary)]">温度</span>
-          <span className="text-xs font-mono text-[var(--accent-primary)]">{config.currentModel.temperature}</span>
-        </div>
-        <input
-          type="range"
-          min="0" max="1" step="0.1"
-          value={config.currentModel.temperature}
-          onChange={(e) => updateModel({ temperature: parseFloat(e.target.value) })}
-          className="w-full accent-[var(--accent-primary)] mb-3"
-        />
-
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-[var(--text-secondary)]">最大 Tokens</span>
-          <span className="text-xs font-mono text-[var(--accent-primary)]">{config.currentModel.maxTokens}</span>
-        </div>
-        <input
-          type="number"
-          value={config.currentModel.maxTokens}
-          onChange={(e) => updateModel({ maxTokens: parseInt(e.target.value) || 4096 })}
-          className="neon-input w-full text-sm"
-          min="256" max="32768" step="256"
-        />
-      </div>
-
       {/* 计时器 */}
       <div className="glass-card p-4 flex items-center justify-center">
         <div className="led-display">{formatTime(displayTime)}</div>
@@ -196,27 +174,30 @@ export function Sidebar({ onStartAnalysis, onStopAnalysis, onLocalAnalysis, onEx
 
       {/* 控制按钮 */}
       <div className="flex flex-col gap-2">
-        {!isAnalyzing ? (
-          <>
+        {!isRunning ? (
+          preprocessDone ? (
+            // 本地预处理完成 → 显示 AI 深度分析按钮
             <button
-              onClick={onStartAnalysis}
+              onClick={onAIAnalysis}
               disabled={!filePath}
               className="neon-btn primary w-full disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              ▶ AI 分析
+              ▶ AI 深度分析
             </button>
+          ) : (
+            // idle / error / stopped → 显示预处理按钮
             <button
-              onClick={onLocalAnalysis}
+              onClick={onPreprocess}
               disabled={!filePath}
               className="neon-btn w-full disabled:opacity-30 disabled:cursor-not-allowed"
               style={{ borderColor: 'var(--accent-cyan)', color: 'var(--accent-cyan)' }}
             >
-              ◆ 本地规则分析
+              ◆ 本地预处理
             </button>
-          </>
+          )
         ) : (
           <button
-            onClick={onStopAnalysis}
+            onClick={onStop}
             className="neon-btn danger w-full"
           >
             ■ 停止分析

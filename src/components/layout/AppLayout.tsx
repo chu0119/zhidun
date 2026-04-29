@@ -24,9 +24,9 @@ import { useConfigStore } from '@/stores/config-store'
 import { useHistoryStore } from '@/stores/history-store'
 import { useAppStore } from '@/stores/app-store'
 import { createAIProvider } from '@/ai-providers'
-import { LogAnalyzer } from '@/core/analyzer'
+import { LogAnalyzer, estimateTokens } from '@/core/analyzer'
 import { LogParser } from '@/core/log-parser'
-import { processLog, compressLogForAI } from '@/core/log-processor'
+import { compressLogForAI, smartSample } from '@/core/log-processor'
 import { exportToDocx, exportToPdf } from '@/core/report-generator'
 import { analyzeWithRules } from '@/core/rule-engine'
 import { extractIPsFromLines, lookupIPs } from '@/core/geoip'
@@ -42,7 +42,7 @@ import {
 type TabKey = 'ai-analysis' | 'ai-report' | 'local-analysis' | 'local-report' | 'threat' | 'attack' | 'session' | 'charts' | 'path' | 'geo'
 
 export function AppLayout() {
-  const [activeTab, setActiveTab] = useState<TabKey>('ai-analysis')
+  const [activeTab, setActiveTab] = useState<TabKey>('local-analysis')
   const [showSettings, setShowSettings] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [showUpdate, setShowUpdate] = useState(false)
@@ -54,7 +54,7 @@ export function AppLayout() {
   const { config, updateConfig } = useConfigStore()
   const { addRecord } = useHistoryStore()
   const status = useAnalysisStore(s => s.status)
-  const localStatus = useAnalysisStore(s => s.localStatus)
+  const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
 
   // 稳定的 store 访问（避免在 useCallback 依赖中使用 store 对象）
   const getStore = useAnalysisStore.getState
@@ -93,8 +93,8 @@ export function AppLayout() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
-  // ===== 本地规则分析 =====
-  const handleLocalAnalysis = useCallback(async () => {
+  // ===== 本地预处理（规则匹配 + 数据清洗） =====
+  const handlePreprocess = useCallback(async () => {
     const currentFileValue = useAnalysisStore.getState().currentFile
     if (!currentFileValue) return
 
@@ -103,12 +103,12 @@ export function AppLayout() {
       : [currentFileValue, currentFileValue]
 
     setActiveTab('local-analysis')
-    getStore().setLocalStatus('preparing')
+    getStore().setPreprocessStatus('preparing')
     getStore().startLocalTimer()
 
     const s = useAnalysisStore.getState()
     const progressStore = { addProgress: (msg: string) => s.addLocalProgress(msg) }
-    const getStatus = () => useAnalysisStore.getState().localStatus
+    const getStatus = () => useAnalysisStore.getState().preprocessStatus
 
     try {
       await showLocalAnalysisPhase1(progressStore, getStatus)
@@ -138,7 +138,7 @@ export function AppLayout() {
         totalLines: allLines.length,
       }, getStatus)
 
-      getStore().setLocalStatus('analyzing')
+      getStore().setPreprocessStatus('analyzing')
       await showLocalAnalysisPhase3(progressStore, allLines.length, getStatus)
 
       const result = analyzeWithRules(allLines, (msg) => getStore().addLocalProgress(msg), getCustomRules())
@@ -146,9 +146,19 @@ export function AppLayout() {
       const elapsed = useAnalysisStore.getState().localElapsedTime
       await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
 
+      // 提取可疑行（匹配到规则的日志行）
+      const suspiciousLines = result.matches.map(m => m.line)
+      const matchedCategories = [...new Set(result.matches.map(m => m.rule.category))]
+
       getStore().setLocalReportText(result.report)
       getStore().setLocalRuleResult(result)
-      getStore().setLocalStatus('done')
+      getStore().setPreprocessResult({
+        totalLines: allLines.length,
+        suspiciousLines: suspiciousLines.length,
+        suspiciousContent: suspiciousLines,
+        matchedCategories,
+      })
+      getStore().setPreprocessStatus('done')
 
       setActiveTab('local-report')
 
@@ -159,7 +169,7 @@ export function AppLayout() {
         fileSize: (fileResult.size || 0),
         linesAnalyzed: allLines.length,
         modelProvider: 'local',
-        modelName: '本地规则引擎',
+        modelName: '本地预处理',
         analysisTime: elapsed,
         hasReport: true,
         reportText: result.report,
@@ -183,7 +193,7 @@ export function AppLayout() {
         processAlerts(notifConfig, result.categoryStats, result.summary, displayName).catch(() => {})
       }
     } catch (error: any) {
-      getStore().setLocalStatus('error')
+      getStore().setPreprocessStatus('error')
       getStore().setError(error.message)
       getStore().addLocalProgress(`错误: ${error.message}`)
     } finally {
@@ -193,14 +203,17 @@ export function AppLayout() {
 
   // 注册本地分析触发器（供空状态按钮使用）
   useEffect(() => {
-    useAppStore.getState().setLocalAnalysisTrigger(handleLocalAnalysis)
+    useAppStore.getState().setLocalAnalysisTrigger(handlePreprocess)
     return () => useAppStore.getState().setLocalAnalysisTrigger(null)
-  }, [handleLocalAnalysis])
+  }, [handlePreprocess])
 
-  // ===== AI 分析 =====
-  const handleStartAnalysis = useCallback(async () => {
+  // ===== AI 深度分析（基于预处理结果） =====
+  const handleAIAnalysis = useCallback(async () => {
     const currentFileValue = useAnalysisStore.getState().currentFile
     if (!currentFileValue) return
+
+    const preprocessResult = useAnalysisStore.getState().preprocessResult
+    const logLines = useAnalysisStore.getState().logLines
 
     const [fullPath, displayName] = currentFileValue.includes('|')
       ? currentFileValue.split('|')
@@ -208,6 +221,7 @@ export function AppLayout() {
 
     setActiveTab('ai-analysis')
     getStore().setStatus('preparing')
+    getStore().setError(null)
     getStore().startTimer()
 
     const s = useAnalysisStore.getState()
@@ -218,41 +232,102 @@ export function AppLayout() {
       await showPhase1(progressStore, config.currentModel.modelName, getStatus)
 
       progressStore.addProgress('')
-      progressStore.addProgress('[读取] 正在读取日志文件...')
-
-      const fileResult = await window.electronAPI.readTextFile(fullPath)
-      if (!fileResult.success) throw new Error(`读取文件失败: ${fileResult.error}`)
-
-      const fileText = fileResult.text || ''
-      const allLines = fileText.split('\n').filter((l: string) => l.trim())
-      const totalLines = allLines.length
-      getStore().setLogLines(allLines)
+      progressStore.addProgress('[准备] 基于本地预处理结果构建 AI 分析输入...')
 
       const parser = new LogParser(fullPath)
-      const formatType = parser.detectFormat(allLines)
+      const formatType = parser.detectFormat(logLines)
 
-      const result = processLog(
-        allLines, totalLines, formatType,
-        fileResult.encoding || 'utf-8',
-        (fileResult.size || 0) / (1024 * 1024),
-        config.defaultLines,
-        config.currentModel.maxTokens
-      )
+      // 策略：发送本地分析报告 + 少量可疑日志样本，不发全量日志
+      const MAX_TOTAL_TOKENS = 20000
+      const MAX_LOG_TOKENS = 10000
+
+      // 构建本地分析摘要
+      const localRuleResult = useAnalysisStore.getState().localRuleResult
+      const localReport = useAnalysisStore.getState().localReportText
+      let analysisSummary = ''
+
+      if (localRuleResult) {
+        const { summary, categoryStats, aggregatedAlerts, totalLines, matchedLines } = localRuleResult
+        analysisSummary = [
+          `[本地规则分析结果]`,
+          `- 扫描总行数: ${totalLines}`,
+          `- 命中规则行数: ${matchedLines}`,
+          `- 命中率: ${((matchedLines / totalLines) * 100).toFixed(2)}%`,
+          `- 风险分布: 严重 ${summary.critical}, 高危 ${summary.high}, 中危 ${summary.medium}, 低危 ${summary.low}`,
+          `- 攻击类别统计: ${Object.entries(categoryStats).map(([k, v]) => `${k}(${v})`).join(', ')}`,
+          ``,
+          `[Top 威胁 IP 聚合]`,
+          ...aggregatedAlerts
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 15)
+            .map(a => `- ${a.sourceIP}: ${a.rule.name} x${a.count}次, ${a.rule.category}, ${a.rule.severity}`),
+        ].join('\n')
+        progressStore.addProgress(`[摘要] 本地分析: ${matchedLines} 条命中, ${Object.keys(categoryStats).length} 个攻击类别, ${aggregatedAlerts.length} 个 IP 聚合`)
+      }
+
+      // 挑选最有价值的可疑日志样本（每个攻击类别取 top 3）
+      let sampleLines: string[] = []
+      if (localRuleResult && localRuleResult.matches.length > 0) {
+        const seen = new Set<string>()
+        const byCategory: Record<string, typeof localRuleResult.matches> = {}
+        for (const m of localRuleResult.matches) {
+          const cat = m.rule.category
+          if (!byCategory[cat]) byCategory[cat] = []
+          byCategory[cat].push(m)
+        }
+        // 每个类别取最多 3 条不同的样本
+        for (const [cat, matches] of Object.entries(byCategory)) {
+          let count = 0
+          for (const m of matches) {
+            if (count >= 3) break
+            if (!seen.has(m.line)) {
+              seen.add(m.line)
+              sampleLines.push(m.line)
+              count++
+            }
+          }
+        }
+        progressStore.addProgress(`[样本] 从 ${localRuleResult.matches.length} 条命中中挑选 ${sampleLines.length} 条代表性样本`)
+      } else if (preprocessResult && preprocessResult.suspiciousContent.length > 0) {
+        // 没有 ruleResult 但有可疑行，取前 30 条
+        sampleLines = preprocessResult.suspiciousContent.slice(0, 30)
+        progressStore.addProgress(`[样本] 使用前 ${sampleLines.length} 条可疑行`)
+      } else {
+        // 没有预处理结果，用 smartSample 从全部日志中采样
+        sampleLines = smartSample(logLines, 50, MAX_LOG_TOKENS)
+        progressStore.addProgress(`[样本] 从 ${logLines.length} 行中智能采样 ${sampleLines.length} 行`)
+      }
+
+      // 压缩样本日志并检查 token
+      const logContent = compressLogForAI(sampleLines, formatType)
+      const logTokens = estimateTokens(logContent)
+      const summaryTokens = estimateTokens(analysisSummary)
+      const totalTokens = summaryTokens + logTokens
+      progressStore.addProgress(`[Token] 摘要: ~${summaryTokens.toLocaleString()}, 日志样本: ~${logTokens.toLocaleString()}, 总计: ~${totalTokens.toLocaleString()}`)
+
+      // 如果日志样本仍然太长，进一步截断
+      if (logTokens > MAX_LOG_TOKENS) {
+        sampleLines = smartSample(sampleLines, 20, MAX_LOG_TOKENS)
+        progressStore.addProgress(`[压缩] 日志样本压缩至 ${sampleLines.length} 行`)
+      }
+
+      const totalLines = logLines.length
+      const sampledLines = sampleLines.length
 
       getStore().setMetadata({
-        formatType: result.formatType,
-        encoding: result.encoding,
-        totalLines: result.totalLines,
-        sampledLines: result.sampledLines,
+        formatType,
+        encoding: 'utf-8',
+        totalLines,
+        sampledLines,
       })
 
       await showPhase2(progressStore, {
         format: formatType,
-        encoding: fileResult.encoding || 'utf-8',
-        sizeMB: ((fileResult.size || 0) / (1024 * 1024)).toFixed(2),
+        encoding: 'utf-8',
+        sizeMB: '0',
         totalLines,
-        sampledLines: result.sampledLines,
-        tokens: result.estimatedTokens,
+        sampledLines,
+        tokens: 0,
       }, getStatus)
 
       await showPhase3Pre(progressStore, config.currentModel.modelName, getStatus)
@@ -269,7 +344,7 @@ export function AppLayout() {
         timeout: 600,
       })
 
-      const analyzer = new LogAnalyzer(provider)
+      const analyzer = new LogAnalyzer(provider, undefined, (msg) => progressStore.addProgress(msg))
       getStore().setAbortController(analyzer['abortController'] || null)
 
       const origStop = analyzer.stop.bind(analyzer)
@@ -278,13 +353,26 @@ export function AppLayout() {
         getStore().setAbortController(null)
       }
 
-      const logContent = compressLogForAI(result.lines, result.formatType)
-      const report = await analyzer.analyze(logContent, {
-        formatType: result.formatType,
-        encoding: result.encoding,
-        totalLines: result.totalLines,
-        sampledLines: result.sampledLines,
-      })
+      // 构建最终日志内容（压缩后的样本）
+      const finalLogContent = compressLogForAI(sampleLines, formatType)
+
+      // 将本地分析摘要 + 日志样本合并为 AI 输入
+      const fullContent = analysisSummary
+        ? `${analysisSummary}\n\n[可疑日志样本 (${sampleLines.length} 条)]\n${finalLogContent}`
+        : finalLogContent
+
+      const preprocessSummary = preprocessResult ? {
+        totalLines: preprocessResult.totalLines,
+        suspiciousLines: preprocessResult.suspiciousLines,
+        matchedCategories: preprocessResult.matchedCategories,
+      } : undefined
+
+      const report = await analyzer.analyze(fullContent, {
+        formatType,
+        encoding: 'utf-8',
+        totalLines,
+        sampledLines,
+      }, preprocessSummary)
 
       if (report) {
         await showPhase3Post(progressStore, Math.round(report.length / 1024), getStatus)
@@ -301,8 +389,8 @@ export function AppLayout() {
         addRecord({
           filePath: fullPath,
           fileName: displayName || 'unknown',
-          fileSize: (fileResult.size || 0),
-          linesAnalyzed: result.sampledLines,
+          fileSize: 0,
+          linesAnalyzed: sampledLines,
           modelProvider: config.currentModel.provider,
           modelName: config.currentModel.modelName,
           analysisTime: elapsed,
@@ -311,13 +399,24 @@ export function AppLayout() {
           notes: '',
         })
       } else {
+        progressStore.addProgress('')
+        progressStore.addProgress('[错误] AI 未返回有效分析结果')
+        progressStore.addProgress('[提示] 可能原因：模型不支持当前日志内容、API 连接超时、或模型返回了空响应')
+        progressStore.addProgress(`[提示] 当前模型: ${config.currentModel.provider} / ${config.currentModel.modelName}`)
+        progressStore.addProgress(`[提示] API 地址: ${config.currentModel.baseUrl || '(默认)'}`)
         getStore().setStatus('error')
-        getStore().setError('AI 未返回有效分析结果')
+        getStore().setError('AI 未返回有效分析结果，请检查模型配置和连接状态')
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        getStore().addProgress('分析已被用户停止')
+        progressStore.addProgress('分析已被用户停止')
+        getStore().setStatus('stopped')
       } else {
+        progressStore.addProgress('')
+        progressStore.addProgress(`[错误] AI 分析失败: ${error.message || error}`)
+        progressStore.addProgress(`[提示] 当前模型: ${config.currentModel.provider} / ${config.currentModel.modelName}`)
+        progressStore.addProgress(`[提示] API 地址: ${config.currentModel.baseUrl || '(默认)'}`)
+        progressStore.addProgress('[提示] 请检查：1) 模型服务是否运行中 2) API 地址是否正确 3) 模型名称是否正确')
         getStore().setStatus('error')
         getStore().setError(error.message)
       }
@@ -327,9 +426,10 @@ export function AppLayout() {
     }
   }, [config])
 
-  // ===== 停止分析 =====
-  const handleStopAnalysis = useCallback(() => {
-    const { abortController, status } = useAnalysisStore.getState()
+  // ===== 统一停止分析 =====
+  const handleStop = useCallback(() => {
+    const { abortController, status, preprocessStatus } = useAnalysisStore.getState()
+    // 停止 AI 分析
     if (status === 'preparing' || status === 'analyzing') {
       getStore().setStatus('stopped')
       getStore().stopTimer()
@@ -338,12 +438,9 @@ export function AppLayout() {
         getStore().setAbortController(null)
       }
     }
-  }, [])
-
-  const handleStopLocalAnalysis = useCallback(() => {
-    const { localStatus } = useAnalysisStore.getState()
-    if (localStatus === 'preparing' || localStatus === 'analyzing') {
-      getStore().setLocalStatus('stopped')
+    // 停止预处理
+    if (preprocessStatus === 'preparing' || preprocessStatus === 'analyzing') {
+      getStore().setPreprocessStatus('stopped')
       getStore().stopLocalTimer()
     }
   }, [])
@@ -429,8 +526,7 @@ export function AppLayout() {
         document.querySelector<HTMLButtonElement>('[data-file-select]')?.click()
       }
       if (e.key === 'Escape') {
-        handleStopAnalysis()
-        handleStopLocalAnalysis()
+        handleStop()
       }
       if (e.ctrlKey && e.key === 'h') {
         e.preventDefault()
@@ -444,7 +540,7 @@ export function AppLayout() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleStopAnalysis, handleStopLocalAnalysis])
+  }, [handleStop])
 
   // 全局拖放事件处理
   useEffect(() => {
@@ -506,17 +602,16 @@ export function AppLayout() {
           break
         case 'start-local-analysis': {
           const s = useAnalysisStore.getState()
-          if (s.localStatus === 'idle' && s.currentFile) handleLocalAnalysis()
+          if (s.preprocessStatus === 'idle' && s.currentFile) handlePreprocess()
           break
         }
         case 'start-ai-analysis': {
           const s = useAnalysisStore.getState()
-          if (s.status === 'idle' && s.currentFile) handleStartAnalysis()
+          if (s.preprocessStatus === 'done' && s.status === 'idle' && s.currentFile) handleAIAnalysis()
           break
         }
         case 'stop-analysis':
-          handleStopAnalysis()
-          handleStopLocalAnalysis()
+          handleStop()
           break
         case 'clear-output':
           useAnalysisStore.getState().clearAll()
@@ -536,20 +631,20 @@ export function AppLayout() {
       }
     })
     return cleanup
-  }, [handleStartAnalysis, handleLocalAnalysis, handleStopAnalysis, handleStopLocalAnalysis, handleExportReport])
+  }, [handlePreprocess, handleAIAnalysis, handleStop, handleExportReport])
 
   // 根据当前 tab 决定显示的分析状态
   const isAiTab = activeTab === 'ai-analysis' || activeTab === 'ai-report'
   const isLocalTab = activeTab === 'local-analysis' || activeTab === 'local-report' || activeTab === 'threat' || activeTab === 'attack' || activeTab === 'session'
-  const currentStatus = isAiTab ? status : isLocalTab ? localStatus : 'idle'
+  const currentStatus = isAiTab ? status : isLocalTab ? preprocessStatus : 'idle'
   const isAnalyzing = currentStatus === 'analyzing' || currentStatus === 'preparing'
 
-  // Tab 定义
+  // Tab 定义（本地预处理在前，AI 分析在后）
   const tabs: { key: TabKey; label: string }[] = [
-    { key: 'ai-analysis', label: 'AI 分析' },
-    { key: 'ai-report', label: 'AI 报告' },
     { key: 'local-analysis', label: '本地分析' },
     { key: 'local-report', label: '本地报告' },
+    { key: 'ai-analysis', label: 'AI 分析' },
+    { key: 'ai-report', label: 'AI 报告' },
     { key: 'threat', label: '威胁检测' },
     { key: 'attack', label: '攻击分析' },
     { key: 'session', label: '攻击会话' },
@@ -583,9 +678,9 @@ export function AppLayout() {
         {/* 左侧面板 */}
         <div className="shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-secondary)]/50 backdrop-blur-sm overflow-y-auto">
           <Sidebar
-            onStartAnalysis={handleStartAnalysis}
-            onStopAnalysis={isAiTab ? handleStopAnalysis : handleStopLocalAnalysis}
-            onLocalAnalysis={handleLocalAnalysis}
+            onPreprocess={handlePreprocess}
+            onAIAnalysis={handleAIAnalysis}
+            onStop={handleStop}
             onExportReport={handleExportReport}
           />
         </div>

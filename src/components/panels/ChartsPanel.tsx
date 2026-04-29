@@ -1,14 +1,12 @@
 // 可视化图表面板
 
-import React, { useMemo, useState, useEffect } from 'react'
-import ReactECharts from 'echarts-for-react'
-import * as echarts from 'echarts'
+import React, { useMemo } from 'react'
+import { ScalingChart } from '@/components/common/ScalingChart'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useConfigStore } from '@/stores/config-store'
 import { extractChartData } from '@/utils/chart-data'
 import { generateMapScatterData, aggregateByCountry } from '@/core/geoip'
-
-const WORLD_MAP_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+import { ensureWorldMap, geoNameToChinese } from '@/core/world-map'
 
 export function ChartsPanel() {
   const reportText = useAnalysisStore(s => s.reportText)
@@ -19,19 +17,9 @@ export function ChartsPanel() {
   const localRuleResult = useAnalysisStore(s => s.localRuleResult)
   const fontSizes = useConfigStore(s => s.config.fontSizes)
   const scale = fontSizes.charts / 12
-  const [worldMapLoaded, setWorldMapLoaded] = useState(false)
 
-  // 加载世界地图 GeoJSON
-  useEffect(() => {
-    if (worldMapLoaded || !geoIPResults || geoIPResults.size === 0) return
-    fetch(WORLD_MAP_URL)
-      .then(res => res.json())
-      .then(data => {
-        echarts.registerMap('world', data as any)
-        setWorldMapLoaded(true)
-      })
-      .catch(() => {})
-  }, [geoIPResults, worldMapLoaded])
+  // 确保世界地图已注册
+  ensureWorldMap()
 
   // 合并两份报告的数据
   const chartData = useMemo(() => {
@@ -220,7 +208,7 @@ export function ChartsPanel() {
   }
 
   // GeoIP 世界地图
-  const hasGeoData = geoIPResults && geoIPResults.size > 0 && worldMapLoaded
+  const hasGeoData = geoIPResults && geoIPResults.size > 0
   const scatterData = useMemo(() => {
     if (!geoIPResults || !localRuleResult) return []
     const ipCounts = new Map<string, number>()
@@ -255,8 +243,8 @@ export function ChartsPanel() {
     geo: {
       map: 'world',
       roam: true,
-      zoom: 1.2,
-      center: [10, 20],
+      scaleLimit: { min: 0.8, max: 10 },
+      projection: 'equalEarth',
       itemStyle: {
         areaColor: 'rgba(0, 240, 255, 0.05)',
         borderColor: 'rgba(0, 240, 255, 0.2)',
@@ -264,7 +252,7 @@ export function ChartsPanel() {
       },
       emphasis: {
         itemStyle: { areaColor: 'rgba(0, 240, 255, 0.15)' },
-        label: { show: false },
+        label: { show: true, color: '#00f0ff', fontSize: 11, formatter: (p: any) => geoNameToChinese(p.name) },
       },
       label: { show: false },
     },
@@ -400,35 +388,6 @@ export function ChartsPanel() {
 
   // ===== 新增图表 =====
 
-  // HTTP 方法分布饼图
-  const httpMethodOption = useMemo(() => {
-    if (!chartData?.httpMethods || chartData.httpMethods.length === 0) return null
-    const methodColors: Record<string, string> = {
-      GET: '#00f0ff', POST: '#ff0040', PUT: '#ffaa00', DELETE: '#ff6600',
-      PATCH: '#b44aff', HEAD: '#00ff88', OPTIONS: '#7a8ba8',
-    }
-    return {
-      ...baseOption,
-      title: {
-        text: 'HTTP 方法分布',
-        left: 'center', top: 10,
-        textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
-      },
-      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-      series: [{
-        type: 'pie',
-        radius: ['40%', '70%'],
-        center: ['50%', '55%'],
-        data: chartData.httpMethods.map(d => ({
-          ...d,
-          itemStyle: { color: methodColors[d.name] || '#7a8ba8' },
-        })),
-        label: { color: '#7a8ba8', fontSize: Math.round(11 * scale) },
-        itemStyle: { borderRadius: 6, borderColor: '#0a0e1a', borderWidth: 2 },
-      }],
-    }
-  }, [chartData, scale])
-
   // 状态码分布柱状图
   const statusCodeOption = useMemo(() => {
     if (!chartData?.statusCodes || chartData.statusCodes.length === 0) return null
@@ -561,8 +520,6 @@ export function ChartsPanel() {
   }, [chartData, scale])
 
   const hasData = reportText || localReportText
-  const hasExtraCharts = hasGeoData || hasBotData
-
   return (
     <div className="h-full overflow-y-auto">
       {!hasData ? (
@@ -574,58 +531,51 @@ export function ChartsPanel() {
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-2 animate-fade-in">
-          {/* 原有图表 */}
+          {/* 核心统计 */}
           <div className="glass-card p-3">
-            <ReactECharts option={attackTypeOption} style={{ height: 280 }} />
+            <ScalingChart option={attackTypeOption} baseHeight={280} />
           </div>
           <div className="glass-card p-3">
-            <ReactECharts option={riskLevelOption} style={{ height: 280 }} />
+            <ScalingChart option={riskLevelOption} baseHeight={280} />
           </div>
           <div className="glass-card p-3">
-            <ReactECharts option={timelineOption} style={{ height: 280 }} />
+            <ScalingChart option={timelineOption} baseHeight={280} />
           </div>
           <div className="glass-card p-3">
-            <ReactECharts option={ipStatsOption} style={{ height: 280 }} />
+            <ScalingChart option={ipStatsOption} baseHeight={280} />
           </div>
-
-          {/* 新增图表 */}
-          {httpMethodOption && (
+          {/* 流量来源 + 状态码 */}
+          {botCategoryOption && (
             <div className="glass-card p-3">
-              <ReactECharts option={httpMethodOption} style={{ height: 280 }} />
+              <ScalingChart option={botCategoryOption} baseHeight={280} />
             </div>
           )}
           {statusCodeOption && (
             <div className="glass-card p-3">
-              <ReactECharts option={statusCodeOption} style={{ height: 280 }} />
+              <ScalingChart option={statusCodeOption} baseHeight={280} />
             </div>
           )}
+          {/* IP / URL 排行 */}
           {ipDistributionOption && (
             <div className="glass-card p-3">
-              <ReactECharts option={ipDistributionOption} style={{ height: 350 }} />
+              <ScalingChart option={ipDistributionOption} baseHeight={350} />
             </div>
           )}
           {urlPathOption && (
             <div className="glass-card p-3">
-              <ReactECharts option={urlPathOption} style={{ height: 350 }} />
+              <ScalingChart option={urlPathOption} baseHeight={350} />
             </div>
           )}
-
-          {/* GeoIP 世界地图 */}
-          {worldMapOption && (
-            <div className="glass-card p-3 xl:col-span-2">
-              <ReactECharts option={worldMapOption} style={{ height: 400 }} />
-            </div>
-          )}
-          {/* Bot 分类饼图 */}
-          {botCategoryOption && (
-            <div className="glass-card p-3">
-              <ReactECharts option={botCategoryOption} style={{ height: 280 }} />
-            </div>
-          )}
-          {/* 恶意扫描器 Top 10 */}
+          {/* 恶意扫描器 */}
           {maliciousBotOption && (
             <div className="glass-card p-3">
-              <ReactECharts option={maliciousBotOption} style={{ height: 280 }} />
+              <ScalingChart option={maliciousBotOption} baseHeight={280} />
+            </div>
+          )}
+          {/* GeoIP 世界地图（全宽） */}
+          {worldMapOption && (
+            <div className="glass-card p-3 xl:col-span-2">
+              <ScalingChart option={worldMapOption} baseHeight={400} />
             </div>
           )}
         </div>

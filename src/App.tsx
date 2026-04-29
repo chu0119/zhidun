@@ -36,11 +36,13 @@ export default function App() {
       document.documentElement.style.setProperty('--font-analysis', `${fs.analysis}px`)
       document.documentElement.style.setProperty('--font-report', `${fs.report}px`)
       document.documentElement.style.setProperty('--font-charts', `${fs.charts}px`)
-      // 缩放比例（基准: menu=13, analysis=13, report=14, charts=12）
+      document.documentElement.style.setProperty('--font-panels', `${fs.panels}px`)
+      // 缩放比例（基准: menu=13, analysis=13, report=14, charts=12, panels=13）
       document.documentElement.style.setProperty('--font-menu-scale', `${fs.menu / 13}`)
       document.documentElement.style.setProperty('--font-analysis-scale', `${fs.analysis / 13}`)
       document.documentElement.style.setProperty('--font-report-scale', `${fs.report / 14}`)
       document.documentElement.style.setProperty('--font-charts-scale', `${fs.charts / 12}`)
+      document.documentElement.style.setProperty('--font-panels-scale', `${fs.panels / 13}`)
     }
   }, [ready]) // Only run once on startup
 

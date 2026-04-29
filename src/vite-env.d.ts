@@ -18,6 +18,7 @@ interface ElectronAPI {
   getVersion: () => Promise<string>
   platform: string
   httpRequest: (url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) => Promise<{ success: boolean; status?: number; data?: string; error?: string }>
+  geoipLookup: (ips: string[]) => Promise<{ success: boolean; results: Record<string, { country: string; region: string; city: string; lat: number; lon: number; timezone: string }>; error?: string }>
   onMenuAction: (callback: (action: string) => void) => () => void
   checkUpdate: () => Promise<{ hasUpdate?: boolean; error?: string }>
   downloadUpdate: () => Promise<{ success: boolean; error?: string }>

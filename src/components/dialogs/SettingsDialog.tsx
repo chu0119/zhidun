@@ -24,7 +24,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const { currentTheme, setTheme } = useThemeStore()
   const [tab, setTab] = useState<'general' | 'analysis' | 'appearance'>('general')
 
-  const BASE_SIZES: Record<string, number> = { menu: 13, analysis: 13, report: 14, charts: 12 }
+  const BASE_SIZES: Record<string, number> = { menu: 13, analysis: 13, report: 14, charts: 12, panels: 13 }
 
   const handleFontChange = (key: keyof typeof config.fontSizes, value: number) => {
     const newFontSizes = { ...config.fontSizes, [key]: value }
@@ -126,9 +126,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                 <label className="text-sm text-[var(--text-secondary)] block">字体大小设置</label>
                 {([
                   { key: 'menu' as const, label: '菜单/侧边栏' },
-                  { key: 'analysis' as const, label: '分析日志' },
-                  { key: 'report' as const, label: '详细报告' },
-                  { key: 'charts' as const, label: '图表标签' },
+                  { key: 'analysis' as const, label: '分析日志 (本地/AI)' },
+                  { key: 'report' as const, label: '分析报告 (本地/AI)' },
+                  { key: 'panels' as const, label: '数据面板 (威胁/攻击/会话/路径/地理)' },
+                  { key: 'charts' as const, label: '可视化图表' },
                 ]).map(item => (
                   <div key={item.key} className="flex items-center gap-3">
                     <span className="text-xs text-[var(--text-dim)] w-24 shrink-0">{item.label}</span>

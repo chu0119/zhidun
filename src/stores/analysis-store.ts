@@ -7,6 +7,13 @@ import type { RuleAnalysisResult } from '@/core/rule-engine'
 import type { GeoIPResult } from '@/core/geoip'
 import type { BotStat } from '@/core/bot-detector'
 
+interface PreprocessResult {
+  totalLines: number
+  suspiciousLines: number
+  suspiciousContent: string[]
+  matchedCategories: string[]
+}
+
 interface AnalysisState {
   // AI 分析状态
   status: AnalysisStatus
@@ -15,8 +22,9 @@ interface AnalysisState {
   thinkingContent: string
   elapsedTime: number
 
-  // 本地分析状态（独立）
-  localStatus: AnalysisStatus
+  // 预处理状态（本地规则分析 + 数据清洗）
+  preprocessStatus: AnalysisStatus
+  preprocessResult: PreprocessResult | null
   localProgressMessages: string[]
   localReportText: string
   localElapsedTime: number
@@ -44,8 +52,9 @@ interface AnalysisState {
   setThinkingContent: (content: string) => void
   setElapsedTime: (t: number) => void
 
-  // Local Actions
-  setLocalStatus: (status: AnalysisStatus) => void
+  // Preprocess Actions
+  setPreprocessStatus: (status: AnalysisStatus) => void
+  setPreprocessResult: (result: PreprocessResult | null) => void
   addLocalProgress: (message: string) => void
   setLocalReportText: (text: string) => void
   setLocalElapsedTime: (t: number) => void
@@ -76,8 +85,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   thinkingContent: '',
   elapsedTime: 0,
 
-  // Local state
-  localStatus: 'idle',
+  // Preprocess state
+  preprocessStatus: 'idle',
+  preprocessResult: null,
   localProgressMessages: [],
   localReportText: '',
   localElapsedTime: 0,
@@ -119,8 +129,9 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   setThinkingContent: (content) => set({ thinkingContent: content }),
   setElapsedTime: (t) => set({ elapsedTime: t }),
 
-  // ---- Local Actions ----
-  setLocalStatus: (status) => set({ localStatus: status }),
+  // ---- Preprocess Actions ----
+  setPreprocessStatus: (status) => set({ preprocessStatus: status }),
+  setPreprocessResult: (result) => set({ preprocessResult: result }),
 
   addLocalProgress: (message) => set(state => ({
     localProgressMessages: [...state.localProgressMessages, `[${new Date().toLocaleTimeString()}] ${message}`],
@@ -177,7 +188,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       reportText: '',
       thinkingContent: '',
       elapsedTime: 0,
-      localStatus: 'idle',
+      preprocessStatus: 'idle',
+      preprocessResult: null,
       localProgressMessages: [],
       localReportText: '',
       localElapsedTime: 0,

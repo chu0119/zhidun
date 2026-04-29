@@ -201,18 +201,23 @@ export function extractIpStats(lines: string[]): Record<string, number> {
 
 // 从日志中提取时间线
 export function extractTimeline(lines: string[]): { time: string; count: number }[] {
-  const timePattern = /\[?(\d{2}:\d{2}:\d{2})\]?/
+  // 严格匹配 Apache 日志时间格式 [29/Apr/2026:14:30:45 +0800]
+  const timePattern = /\[(\d{2})\/\w{3}\/\d{4}:([01]\d|2[0-3]):([0-5]\d):([0-5]\d)\s/
   const timeCounts: Record<string, number> = {}
 
   for (const line of lines) {
     const match = line.match(timePattern)
     if (match) {
-      const hour = match[1].substring(0, 2) + ':00'
+      const hour = match[2] + ':00'
       timeCounts[hour] = (timeCounts[hour] || 0) + 1
     }
   }
 
-  return Object.entries(timeCounts)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([time, count]) => ({ time, count }))
+  // 补全 0-23 小时（确保时间线连续）
+  const result: { time: string; count: number }[] = []
+  for (let h = 0; h < 24; h++) {
+    const key = String(h).padStart(2, '0') + ':00'
+    result.push({ time: key, count: timeCounts[key] || 0 })
+  }
+  return result
 }
