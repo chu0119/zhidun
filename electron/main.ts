@@ -1,6 +1,9 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { createAppMenu } from './menu'
+import { setupContextMenu } from './context-menu'
+import { setupAutoUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -55,6 +58,13 @@ app.on('activate', () => {
 app.whenReady().then(() => {
   createWindow()
   setupIPC()
+
+  if (mainWindow) {
+    const menu = createAppMenu(mainWindow)
+    Menu.setApplicationMenu(menu)
+    setupContextMenu(mainWindow)
+    setupAutoUpdater(mainWindow)
+  }
 })
 
 // ==================== IPC Handlers ====================
@@ -85,6 +95,36 @@ function setupIPC() {
       properties: ['openFile'],
     })
     return result.canceled ? null : result.filePaths[0]
+  })
+
+  // Open folder dialog
+  ipcMain.handle('dialog:openFolder', async () => {
+    if (!mainWindow) return null
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择日志文件夹',
+      properties: ['openDirectory'],
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  // List log files in folder
+  ipcMain.handle('folder:listLogFiles', async (_, folderPath: string) => {
+    try {
+      const extensions = ['.log', '.txt', '.csv', '.json', '.ndjson', '.jsonl', '.gz']
+      const files: string[] = []
+      const entries = fs.readdirSync(folderPath, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase()
+          if (extensions.includes(ext)) {
+            files.push(path.join(folderPath, entry.name))
+          }
+        }
+      }
+      return { success: true, files }
+    } catch (error: any) {
+      return { success: false, error: error.message, files: [] }
+    }
   })
 
   // Save dialog

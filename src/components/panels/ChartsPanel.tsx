@@ -398,6 +398,168 @@ export function ChartsPanel() {
     }],
   } : null
 
+  // ===== 新增图表 =====
+
+  // HTTP 方法分布饼图
+  const httpMethodOption = useMemo(() => {
+    if (!chartData?.httpMethods || chartData.httpMethods.length === 0) return null
+    const methodColors: Record<string, string> = {
+      GET: '#00f0ff', POST: '#ff0040', PUT: '#ffaa00', DELETE: '#ff6600',
+      PATCH: '#b44aff', HEAD: '#00ff88', OPTIONS: '#7a8ba8',
+    }
+    return {
+      ...baseOption,
+      title: {
+        text: 'HTTP 方法分布',
+        left: 'center', top: 10,
+        textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
+      },
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      series: [{
+        type: 'pie',
+        radius: ['40%', '70%'],
+        center: ['50%', '55%'],
+        data: chartData.httpMethods.map(d => ({
+          ...d,
+          itemStyle: { color: methodColors[d.name] || '#7a8ba8' },
+        })),
+        label: { color: '#7a8ba8', fontSize: Math.round(11 * scale) },
+        itemStyle: { borderRadius: 6, borderColor: '#0a0e1a', borderWidth: 2 },
+      }],
+    }
+  }, [chartData, scale])
+
+  // 状态码分布柱状图
+  const statusCodeOption = useMemo(() => {
+    if (!chartData?.statusCodes || chartData.statusCodes.length === 0) return null
+    const statusColor = (code: string) => {
+      const c = parseInt(code)
+      if (c >= 500) return '#ff0040'
+      if (c >= 400) return '#ff8800'
+      if (c >= 300) return '#ffcc00'
+      return '#00ff88'
+    }
+    return {
+      ...baseOption,
+      title: {
+        text: 'HTTP 状态码分布',
+        left: 'center', top: 10,
+        textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
+      },
+      tooltip: { trigger: 'axis' },
+      grid: { left: '10%', right: '10%', bottom: '15%', top: '20%' },
+      xAxis: {
+        type: 'category',
+        data: chartData.statusCodes.map(d => d.name),
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        axisLabel: { color: '#7a8ba8' },
+      },
+      yAxis: {
+        type: 'value',
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } },
+        axisLabel: { color: '#7a8ba8' },
+      },
+      series: [{
+        type: 'bar',
+        barWidth: '50%',
+        data: chartData.statusCodes.map(d => ({
+          value: d.value,
+          itemStyle: {
+            color: statusColor(d.name),
+            borderRadius: [4, 4, 0, 0],
+          },
+        })),
+      }],
+    }
+  }, [chartData, scale])
+
+  // URL 路径 Top 20 水平柱状图
+  const urlPathOption = useMemo(() => {
+    if (!chartData?.urlPaths || chartData.urlPaths.length === 0) return null
+    const top15 = chartData.urlPaths.slice(0, 15)
+    return {
+      ...baseOption,
+      title: {
+        text: 'URL 路径访问 Top 15',
+        left: 'center', top: 10,
+        textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
+      },
+      tooltip: { trigger: 'axis' },
+      grid: { left: '30%', right: '10%', bottom: '10%', top: '15%' },
+      xAxis: {
+        type: 'value',
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } },
+        axisLabel: { color: '#7a8ba8' },
+      },
+      yAxis: {
+        type: 'category',
+        data: top15.map(d => d.name.length > 25 ? '...' + d.name.slice(-22) : d.name).reverse(),
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        axisLabel: { color: '#7a8ba8', fontSize: Math.round(10 * scale) },
+      },
+      series: [{
+        type: 'bar',
+        barWidth: '60%',
+        data: top15.map(d => d.value).reverse(),
+        itemStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+            colorStops: [
+              { offset: 0, color: 'rgba(0, 240, 255, 0.2)' },
+              { offset: 1, color: '#00f0ff' },
+            ],
+          },
+          borderRadius: [0, 4, 4, 0],
+        },
+      }],
+    }
+  }, [chartData, scale])
+
+  // IP 地址分布 Top 20
+  const ipDistributionOption = useMemo(() => {
+    if (!chartData?.ipStats || chartData.ipStats.length === 0) return null
+    const top20 = chartData.ipStats.slice(0, 20)
+    return {
+      ...baseOption,
+      title: {
+        text: 'IP 地址分布 Top 20',
+        left: 'center', top: 10,
+        textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
+      },
+      tooltip: { trigger: 'axis' },
+      grid: { left: '25%', right: '10%', bottom: '10%', top: '15%' },
+      xAxis: {
+        type: 'value',
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } },
+        axisLabel: { color: '#7a8ba8' },
+      },
+      yAxis: {
+        type: 'category',
+        data: top20.map(d => d.name).reverse(),
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        axisLabel: { color: '#7a8ba8', fontSize: Math.round(10 * scale) },
+      },
+      series: [{
+        type: 'bar',
+        barWidth: '50%',
+        data: top20.map(d => d.value).reverse(),
+        itemStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
+            colorStops: [
+              { offset: 0, color: 'rgba(180, 74, 255, 0.2)' },
+              { offset: 1, color: '#b44aff' },
+            ],
+          },
+          borderRadius: [0, 4, 4, 0],
+        },
+      }],
+    }
+  }, [chartData, scale])
+
   const hasData = reportText || localReportText
   const hasExtraCharts = hasGeoData || hasBotData
 
@@ -412,6 +574,7 @@ export function ChartsPanel() {
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-2 animate-fade-in">
+          {/* 原有图表 */}
           <div className="glass-card p-3">
             <ReactECharts option={attackTypeOption} style={{ height: 280 }} />
           </div>
@@ -424,6 +587,29 @@ export function ChartsPanel() {
           <div className="glass-card p-3">
             <ReactECharts option={ipStatsOption} style={{ height: 280 }} />
           </div>
+
+          {/* 新增图表 */}
+          {httpMethodOption && (
+            <div className="glass-card p-3">
+              <ReactECharts option={httpMethodOption} style={{ height: 280 }} />
+            </div>
+          )}
+          {statusCodeOption && (
+            <div className="glass-card p-3">
+              <ReactECharts option={statusCodeOption} style={{ height: 280 }} />
+            </div>
+          )}
+          {ipDistributionOption && (
+            <div className="glass-card p-3">
+              <ReactECharts option={ipDistributionOption} style={{ height: 350 }} />
+            </div>
+          )}
+          {urlPathOption && (
+            <div className="glass-card p-3">
+              <ReactECharts option={urlPathOption} style={{ height: 350 }} />
+            </div>
+          )}
+
           {/* GeoIP 世界地图 */}
           {worldMapOption && (
             <div className="glass-card p-3 xl:col-span-2">

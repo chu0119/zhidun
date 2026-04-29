@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // File dialogs
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
+  openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
+  listLogFiles: (folderPath: string) => ipcRenderer.invoke('folder:listLogFiles', folderPath),
   saveFile: (options: any) => ipcRenderer.invoke('dialog:saveFile', options),
 
   // File operations
@@ -30,4 +32,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // HTTP request (bypasses CORS)
   httpRequest: (url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) =>
     ipcRenderer.invoke('http:request', url, options),
+
+  // Menu events listener
+  onMenuAction: (callback: (action: string) => void) => {
+    const handler = (_event: any, action: string) => callback(action)
+    ipcRenderer.on('menu:action', handler)
+    return () => ipcRenderer.removeListener('menu:action', handler)
+  },
+
+  // Update
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  getUpdateVersion: () => ipcRenderer.invoke('update:getVersion'),
+  onUpdateEvent: (callback: (event: string, data?: any) => void) => {
+    const channels = ['update:available', 'update:not-available', 'update:error', 'update:download-progress', 'update:downloaded']
+    const handlers = channels.map(channel => {
+      const handler = (_event: any, data?: any) => callback(channel, data)
+      ipcRenderer.on(channel, handler)
+      return { channel, handler }
+    })
+    return () => {
+      handlers.forEach(({ channel, handler }) => ipcRenderer.removeListener(channel, handler))
+    }
+  },
+
 })

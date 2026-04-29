@@ -1,5 +1,8 @@
 // 配置类型
 
+import type { PreprocessConfig } from '@/core/preprocessor'
+import type { NotificationConfig } from '@/core/notification-engine'
+
 export interface ModelConfig {
   provider: string
   modelName: string
@@ -27,6 +30,8 @@ export interface AppConfig {
   windowWidth: number
   windowHeight: number
   showWelcome: boolean
+  preprocessConfig?: PreprocessConfig
+  notificationConfig?: NotificationConfig
 }
 
 export interface ConfigFile {

@@ -6,6 +6,15 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import { APP_VERSION } from './constants'
 
+// 字体回退链：优先使用可用的中文字体
+const CN_FONT_CANDIDATES = ['Microsoft YaHei', 'SimHei', 'STHeiti', 'PingFang SC', 'Noto Sans SC', 'WenQuanYi Micro Hei', 'Arial']
+
+function getAvailableCJKFont(): string {
+  // 在 Electron 环境中，Microsoft YaHei 通常可用
+  // 如果不可用，docx 库会自动回退到默认字体
+  return CN_FONT_CANDIDATES[0]
+}
+
 // ==================== 报告文本解析 ====================
 
 interface ReportLine {
@@ -80,7 +89,7 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
         bold: true,
         size: 56,
         color: '0066cc',
-        font: 'Microsoft YaHei',
+        font: getAvailableCJKFont(),
       })],
     }),
     new Paragraph({
@@ -91,7 +100,7 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
         bold: true,
         size: 40,
         color: '333333',
-        font: 'Microsoft YaHei',
+        font: getAvailableCJKFont(),
       })],
     }),
     new Paragraph({
@@ -101,7 +110,7 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
         text: 'AI 驱动的网站日志安全分析系统',
         size: 22,
         color: '666666',
-        font: 'Microsoft YaHei',
+        font: getAvailableCJKFont(),
       })],
     }),
     new Paragraph({ text: '', spacing: { after: 600 } }),
@@ -109,32 +118,32 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
       children: [
-        new TextRun({ text: '生成时间: ', size: 20, color: '888888', font: 'Microsoft YaHei' }),
-        new TextRun({ text: timestamp, size: 20, color: '333333', font: 'Microsoft YaHei' }),
+        new TextRun({ text: '生成时间: ', size: 20, color: '888888', font: getAvailableCJKFont() }),
+        new TextRun({ text: timestamp, size: 20, color: '333333', font: getAvailableCJKFont() }),
       ],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
       children: [
-        new TextRun({ text: '分析文件: ', size: 20, color: '888888', font: 'Microsoft YaHei' }),
-        new TextRun({ text: fileName, size: 20, color: '333333', font: 'Microsoft YaHei' }),
+        new TextRun({ text: '分析文件: ', size: 20, color: '888888', font: getAvailableCJKFont() }),
+        new TextRun({ text: fileName, size: 20, color: '333333', font: getAvailableCJKFont() }),
       ],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
       children: [
-        new TextRun({ text: '分析引擎: ', size: 20, color: '888888', font: 'Microsoft YaHei' }),
-        new TextRun({ text: '星川智盾 AI 分析引擎', size: 20, color: '333333', font: 'Microsoft YaHei' }),
+        new TextRun({ text: '分析引擎: ', size: 20, color: '888888', font: getAvailableCJKFont() }),
+        new TextRun({ text: '星川智盾 AI 分析引擎', size: 20, color: '333333', font: getAvailableCJKFont() }),
       ],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
       children: [
-        new TextRun({ text: '版本: ', size: 20, color: '888888', font: 'Microsoft YaHei' }),
-        new TextRun({ text: `v${APP_VERSION}`, size: 20, color: '333333', font: 'Microsoft YaHei' }),
+        new TextRun({ text: '版本: ', size: 20, color: '888888', font: getAvailableCJKFont() }),
+        new TextRun({ text: `v${APP_VERSION}`, size: 20, color: '333333', font: getAvailableCJKFont() }),
       ],
     }),
     new Paragraph({
@@ -154,23 +163,27 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
             bold: true,
             size: 32,
             color: '0066cc',
-            font: 'Microsoft YaHei',
+            font: getAvailableCJKFont(),
           })],
         }))
         break
 
       case 'numbered-title':
         children.push(new Paragraph({
-          spacing: { before: 360, after: 200 },
+          spacing: { before: 360, after: 200, line: 360 },
           border: {
             left: { style: BorderStyle.SINGLE, size: 6, color: '0066cc', space: 10 },
           },
+          // 主要章节标题前强制分页（避免标题在页尾孤立）
+          ...(line.content.includes('安全评估') || line.content.includes('风险分析') || line.content.includes('攻击详情') || line.content.includes('建议')
+            ? { pageBreakBefore: true }
+            : {}),
           children: [new TextRun({
             text: line.content,
             bold: true,
             size: 26,
             color: '1a1a2e',
-            font: 'Microsoft YaHei',
+            font: getAvailableCJKFont(),
           })],
         }))
         break
@@ -188,11 +201,11 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
                 bold: true,
                 size: 20,
                 color: 'ffffff',
-                font: 'Microsoft YaHei',
+                font: getAvailableCJKFont(),
                 shading: { type: 'clear' as any, fill: RISK_COLORS[part]?.replace('#', '') || '666666' },
               })]
             }
-            return [new TextRun({ text: part, size: 20, color: '444444', font: 'Microsoft YaHei' })]
+            return [new TextRun({ text: part, size: 20, color: '444444', font: getAvailableCJKFont() })]
           }),
         }))
         break
@@ -204,7 +217,7 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
           indent: { left: 480 },
           children: [
             new TextRun({ text: '  ', size: 20 }),
-            new TextRun({ text: line.content, size: 20, color: '444444', font: 'Microsoft YaHei' }),
+            new TextRun({ text: line.content, size: 20, color: '444444', font: getAvailableCJKFont() }),
           ],
         }))
         break
@@ -214,17 +227,17 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
           spacing: { before: 60, after: 60 },
           indent: { left: 960 },
           children: [
-            new TextRun({ text: '└ ', size: 18, color: '999999', font: 'Microsoft YaHei' }),
-            new TextRun({ text: line.content, size: 18, color: '777777', font: 'Microsoft YaHei' }),
+            new TextRun({ text: '└ ', size: 18, color: '999999', font: getAvailableCJKFont() }),
+            new TextRun({ text: line.content, size: 18, color: '777777', font: getAvailableCJKFont() }),
           ],
         }))
         break
 
       case 'plain':
         children.push(new Paragraph({
-          spacing: { before: 80, after: 80 },
+          spacing: { before: 80, after: 80, line: 340 },
           indent: { left: 360 },
-          children: [new TextRun({ text: line.content, size: 20, color: '444444', font: 'Microsoft YaHei' })],
+          children: [new TextRun({ text: line.content, size: 20, color: '444444', font: getAvailableCJKFont() })],
         }))
         break
 
@@ -247,7 +260,7 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
         text: `星川智盾 v${APP_VERSION} | 星川智盾安全团队 | ${new Date().getFullYear()}`,
         size: 16,
         color: 'aaaaaa',
-        font: 'Microsoft YaHei',
+        font: getAvailableCJKFont(),
       })],
     }),
   )
@@ -356,10 +369,12 @@ export async function exportToPdf(reportText: string, fileName: string): Promise
   document.body.appendChild(container)
 
   try {
-    // 用 html2canvas 将 HTML 渲染为 canvas（中文通过系统字体正确渲染）
+    // 用 html2canvas 将 HTML 渲染为 canvas
+    // scale=3 提高清晰度，allowTaint 允许跨域字体
     const canvas = await html2canvas(container, {
-      scale: 2,
+      scale: 3,
       useCORS: true,
+      allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
     })
@@ -367,11 +382,11 @@ export async function exportToPdf(reportText: string, fileName: string): Promise
     // A4 尺寸 (mm)
     const pageWidth = 210
     const pageHeight = 297
-    const margin = 10
+    const margin = 12
     const contentWidth = pageWidth - margin * 2
     const contentHeight = pageHeight - margin * 2
 
-    // canvas 尺寸 (px)，按 scale=2 对应
+    // canvas 尺寸 (px)
     const canvasWidth = canvas.width
     const canvasHeight = canvas.height
 
@@ -384,6 +399,7 @@ export async function exportToPdf(reportText: string, fileName: string): Promise
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
+      compress: true,
     })
 
     for (let page = 0; page < totalPages; page++) {
@@ -396,19 +412,19 @@ export async function exportToPdf(reportText: string, fileName: string): Promise
       // 创建当前页的 canvas 切片
       const pageCanvas = document.createElement('canvas')
       pageCanvas.width = canvasWidth
-      pageCanvas.height = srcHeight
+      pageCanvas.height = Math.ceil(srcHeight)
       const ctx = pageCanvas.getContext('2d')!
       ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, canvasWidth, srcHeight)
-      ctx.drawImage(canvas, 0, srcY, canvasWidth, srcHeight, 0, 0, canvasWidth, srcHeight)
+      ctx.fillRect(0, 0, canvasWidth, pageCanvas.height)
+      ctx.drawImage(canvas, 0, Math.floor(srcY), canvasWidth, Math.ceil(srcHeight), 0, 0, canvasWidth, pageCanvas.height)
 
-      // 将切片转为图片数据
-      const imgData = pageCanvas.toDataURL('image/jpeg', 0.95)
+      // 将切片转为图片数据 (PNG 保持清晰度)
+      const imgData = pageCanvas.toDataURL('image/png')
 
       // 计算图片在 PDF 中的实际高度
       const imgHeightMm = srcHeight / pxPerMm
 
-      doc.addImage(imgData, 'JPEG', margin, margin, contentWidth, imgHeightMm)
+      doc.addImage(imgData, 'PNG', margin, margin, contentWidth, imgHeightMm)
 
       // 页码
       doc.setFontSize(9)

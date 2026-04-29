@@ -23,11 +23,10 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     try {
       const appPath = await window.electronAPI.getAppPath()
       const historyPath = `${appPath}/config/analysis_history.json`
-      const result = await window.electronAPI.readFile(historyPath)
+      const result = await window.electronAPI.readTextFile(historyPath)
 
-      if (result.success && result.data) {
-        const json = atob(result.data)
-        const data = JSON.parse(json)
+      if (result.success && result.text) {
+        const data = JSON.parse(result.text)
         if (Array.isArray(data)) {
           set({ history: data, loaded: true })
           return

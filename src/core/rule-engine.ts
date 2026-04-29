@@ -42,7 +42,7 @@ export interface RuleAnalysisResult {
 
 // ==================== 规则库 ====================
 
-const RULES: Rule[] = [
+export const BUILT_IN_RULES: Rule[] = [
   // ---- SQL 注入 ----
   {
     id: 'SQL-001', name: 'UNION SELECT 注入', category: 'SQL注入', severity: 'critical',
@@ -650,6 +650,180 @@ const RULES: Rule[] = [
     description: '检测到调试信息泄露',
     remediation: '关闭调试模式，使用自定义错误页面'
   },
+
+  // ==================== Log4j / JNDI 注入 ====================
+  {
+    id: 'LOG4J-001', name: 'Log4Shell JNDI 注入', category: 'Log4j注入', severity: 'critical',
+    patterns: [/\$\{jndi:(ldap|rmi|dns|ldaps|iiop|corba|nds|http):\/\//i, /\$\{jndi:/i],
+    description: '检测到 Log4Shell (CVE-2021-44228) JNDI 注入攻击',
+    remediation: '升级 Log4j 至 2.17.0+，设置 log4j2.formatMsgNoLookups=true'
+  },
+  {
+    id: 'LOG4J-002', name: 'Log4j 查找注入', category: 'Log4j注入', severity: 'critical',
+    patterns: [/\$\{(env|sys|lower|upper|date):/i, /\$\{::-/i],
+    description: '检测到 Log4j 环境变量/系统属性查找注入',
+    remediation: '升级 Log4j 至 2.17.0+，移除 JndiLookup 类'
+  },
+  {
+    id: 'LOG4J-003', name: 'JNDI 远程类加载', category: 'Log4j注入', severity: 'critical',
+    patterns: [/jndi:rmi:\/\//i, /jndi:ldap:\/\//i, /jndi:ldaps:\/\//i, /InitialContext.*lookup/i],
+    description: '检测到 JNDI 远程类加载尝试',
+    remediation: '升级 JRE 至 8u191+/7u201+，禁用远程代码库加载'
+  },
+  {
+    id: 'LOG4J-004', name: 'Log4j Bypass 编码绕过', category: 'Log4j注入', severity: 'critical',
+    patterns: [/\$\{[^}]*jndi[^}]*:/i, /%24%7Bjndi/i, /\$\{lower:j\$\{lower:n\$\{lower:d/i, /\$\{::-j\$\{::-n\$\{::-d/i],
+    description: '检测到 Log4j 编码绕过攻击',
+    remediation: '升级 Log4j 至 2.17.0+，WAF 规则需覆盖编码变体'
+  },
+  {
+    id: 'LOG4J-005', name: 'Log4j DNS 外带', category: 'Log4j注入', severity: 'high',
+    patterns: [/\$\{jndi:dns:\/\//i, /\$\{jndi:ldap:\/\/.*\.\w+\.\w+/i],
+    description: '检测到 Log4j DNS 外带数据泄露尝试',
+    remediation: '监控 DNS 查询日志，升级 Log4j 至 2.17.0+'
+  },
+
+  // ==================== Spring4Shell ====================
+  {
+    id: 'SPRING-001', name: 'Spring4Shell RCE', category: 'Spring4Shell', severity: 'critical',
+    patterns: [/class\.module\.classLoader/i, /class\.module\.classLoader\.resources/i, /spring4shell/i],
+    description: '检测到 Spring4Shell (CVE-2022-22965) RCE 攻击',
+    remediation: '升级 Spring Framework 至 5.3.18+ / 5.2.20+，升级 JDK 至 11+'
+  },
+  {
+    id: 'SPRING-002', name: 'Spring Cloud Function SpEL 注入', category: 'Spring4Shell', severity: 'critical',
+    patterns: [/spring\.cloud\.function/i, /functionRouter/i, /spring-cloud-function/i],
+    description: '检测到 Spring Cloud Function (CVE-2022-22963) SpEL 注入',
+    remediation: '升级 spring-cloud-function 至 3.2.3+'
+  },
+  {
+    id: 'SPRING-003', name: 'Spring Actuator 未授权访问', category: 'Spring4Shell', severity: 'high',
+    patterns: [/\/actuator(\/|$)/i, /\/env(\/|$)/i, /\/heapdump(\/|$)/i, /\/mappings(\/|$)/i, /\/configprops(\/|$)/i, /\/beans(\/|$)/i],
+    description: '检测到 Spring Actuator 端点未授权访问',
+    remediation: '限制 Actuator 端点访问，配置 management.endpoints.web.exposure.include'
+  },
+
+  // ==================== WebShell 检测 ====================
+  {
+    id: 'WEBSHELL-001', name: 'PHP WebShell 特征', category: 'WebShell检测', severity: 'critical',
+    patterns: [/eval\s*\(\s*\$_(GET|POST|REQUEST|COOKIE)/i, /base64_decode\s*\(\s*\$/i, /system\s*\(\s*\$/i, /passthru\s*\(\s*\$/i, /shell_exec\s*\(\s*\$/i],
+    description: '检测到 PHP WebShell 特征代码',
+    remediation: '删除 WebShell 文件，检查上传漏洞，部署 WAF'
+  },
+  {
+    id: 'WEBSHELL-002', name: 'JSP WebShell 特征', category: 'WebShell检测', severity: 'critical',
+    patterns: [/Runtime\.getRuntime\(\)\.exec/i, /ProcessBuilder.*start/i, /<%.*Runtime.*exec/i, /request\.getParameter.*exec/i],
+    description: '检测到 JSP WebShell 特征代码',
+    remediation: '删除 WebShell 文件，限制上传目录执行权限'
+  },
+  {
+    id: 'WEBSHELL-003', name: 'WebShell 通信特征', category: 'WebShell检测', severity: 'high',
+    patterns: [/\/[a-f0-9]{32}\.php$/i, /\/cmd\.(php|jsp|aspx)$/i, /\/shell\.(php|jsp|aspx)$/i, /\/hack\.(php|jsp|aspx)$/i],
+    description: '检测到疑似 WebShell 通信 URL',
+    remediation: '检查对应文件是否为 WebShell，清理后门'
+  },
+  {
+    id: 'WEBSHELL-004', name: 'WebShell 工具特征', category: 'WebShell检测', severity: 'critical',
+    patterns: [/chopper|菜刀|蚁剑|冰蝎|哥斯拉|behinder|godzilla/i, /a]WVs\s*\(\s*base64/i, /@eval\s*\(/i],
+    description: '检测到常见 WebShell 管理工具特征',
+    remediation: '删除 WebShell，检查服务器权限，排查入侵路径'
+  },
+  {
+    id: 'WEBSHELL-005', name: 'WebShell 文件上传', category: 'WebShell检测', severity: 'high',
+    patterns: [/Content-Disposition.*\.(php|jsp|asp|aspx|cgi|phtml|phar)/i, /filename=.*\.(php|jsp|asp|aspx)/i, /multipart.*\.(php|jsp|asp)/i],
+    description: '检测到疑似 WebShell 文件上传',
+    remediation: '限制上传文件类型，禁止上传目录执行脚本'
+  },
+
+  // ==================== API 滥用 ====================
+  {
+    id: 'API-001', name: 'API 频率限制突破', category: 'API滥用', severity: 'medium',
+    patterns: [/X-Forwarded-For.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/i, /X-Real-IP.*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/i],
+    description: '检测到通过伪造 IP 头绕过 API 频率限制',
+    remediation: '使用真实客户端 IP 识别，配置 WAF 速率限制'
+  },
+  {
+    id: 'API-002', name: 'API 参数篡改', category: 'API滥用', severity: 'high',
+    patterns: [/[?&](page|limit|offset|size)=\d{5,}/i, /[?&](id|uid|user_id)=[^&]*\.\./i, /[?&](sort|order|by)=.*;/i],
+    description: '检测到 API 参数篡改尝试',
+    remediation: '对 API 参数进行严格校验和范围限制'
+  },
+  {
+    id: 'API-003', name: 'GraphQL 注入', category: 'API滥用', severity: 'high',
+    patterns: [/__schema/i, /__type/i, /query\s*\{.*__/, /mutation\s*\{.*__/, /introspection/i],
+    description: '检测到 GraphQL 内省/注入攻击',
+    remediation: '禁用 GraphQL 内省，限制查询深度和复杂度'
+  },
+  {
+    id: 'API-004', name: 'REST API 批量枚举', category: 'API滥用', severity: 'medium',
+    patterns: [/\/api\/v\d+\/users\/\d+/i, /\/api\/v\d+\/orders\/\d+/i, /\/api\/v\d+\/accounts\/\d+/i],
+    description: '检测到 REST API 批量枚举尝试',
+    remediation: '实施 API 速率限制，使用 UUID 替代自增 ID'
+  },
+
+  // ==================== 爬虫/Bot 检测 ====================
+  {
+    id: 'BOT-001', name: '恶意爬虫 User-Agent', category: '爬虫Bot', severity: 'medium',
+    patterns: [/(scrapy|httrack|nikto|sqlmap|nmap|masscan|zgrab|gobuster|dirsearch|ffuf)\b/i, /python-requests|go-http-client|java\/\d|libwww-perl/i],
+    description: '检测到恶意爬虫/扫描工具 User-Agent',
+    remediation: '配置 robots.txt，部署 Bot 管理方案'
+  },
+  {
+    id: 'BOT-002', name: '无头浏览器自动化', category: '爬虫Bot', severity: 'medium',
+    patterns: [/HeadlessChrome|PhantomJS|Selenium|webdriver|puppeteer|playwright/i, /X-Requested-With.*XMLHttpRequest.*automated/i],
+    description: '检测到无头浏览器自动化访问',
+    remediation: '部署 Bot 检测（如 reCAPTCHA），检查自动化行为特征'
+  },
+  {
+    id: 'BOT-003', name: '数据抓取行为', category: '爬虫Bot', severity: 'low',
+    patterns: [/[?&](format|output|export|download)=(json|xml|csv|all)/i, /[?&](limit|per_page)=(100|[1-9]\d{2,})/i],
+    description: '检测到疑似数据抓取行为',
+    remediation: '限制单次返回数据量，实施 API 配额管理'
+  },
+  {
+    id: 'BOT-004', name: 'SEO 工具扫描', category: '爬虫Bot', severity: 'low',
+    patterns: [/(ahrefs|semrush|moz|mj12bot|dotbot|blexbot|crawlbot|rogerbot)/i, /AhrefsBot|SemrushBot|MJ12bot|DotBot/i],
+    description: '检测到 SEO 工具扫描',
+    remediation: '根据业务需要决定是否放行 SEO 爬虫'
+  },
+  {
+    id: 'BOT-005', name: 'AI 训练数据抓取', category: '爬虫Bot', severity: 'medium',
+    patterns: [/(GPTBot|ChatGPT-User|ClaudeBot|anthropic-ai|CCBot|Google-Extended|Bytespider)/i],
+    description: '检测到 AI 训练数据抓取爬虫',
+    remediation: '在 robots.txt 中禁止 AI 训练爬虫，配置 WAF 拦截'
+  },
+
+  // ==================== 敏感文件访问 ====================
+  {
+    id: 'SENSITIVE-001', name: '配置文件访问', category: '敏感文件', severity: 'high',
+    patterns: [/\/(\.env|\.git\/config|wp-config\.php|config\.php|settings\.py|application\.yml|database\.yml)/i, /\/config\.(json|xml|yaml|yml|ini|properties)$/i],
+    description: '检测到配置文件访问尝试',
+    remediation: '将配置文件移至 Web 根目录外，配置访问控制'
+  },
+  {
+    id: 'SENSITIVE-002', name: '备份文件访问', category: '敏感文件', severity: 'high',
+    patterns: [/\/.*\.(bak|old|backup|orig|save|swp|tmp|sql\.gz|tar\.gz|zip)$/i, /\/(backup|dump|export|dump\.sql)/i],
+    description: '检测到备份文件访问尝试',
+    remediation: '删除不必要的备份文件，禁止 Web 目录存放备份'
+  },
+  {
+    id: 'SENSITIVE-003', name: '版本控制文件访问', category: '敏感文件', severity: 'high',
+    patterns: [/\/\.git(\/|$)/i, /\/\.svn(\/|$)/i, /\/\.hg(\/|$)/i, /\/\.bzr(\/|$)/i, /\/\.DS_Store$/i],
+    description: '检测到版本控制目录/文件访问',
+    remediation: '删除 Web 目录中的 .git/.svn 等目录'
+  },
+  {
+    id: 'SENSITIVE-004', name: '管理后台访问', category: '敏感文件', severity: 'medium',
+    patterns: [/\/(admin|administrator|manager|console|phpmyadmin|adminer|webmin)/i, /\/(wp-admin|wp-login|cpanel|plesk)/i],
+    description: '检测到管理后台路径访问',
+    remediation: '限制管理后台 IP 访问，启用多因素认证'
+  },
+  {
+    id: 'SENSITIVE-005', name: '调试/测试端点访问', category: '敏感文件', severity: 'medium',
+    patterns: [/\/(debug|test|trace|info\.php|phpinfo|server-status|server-info)/i, /\/(_profiler|_debug|debug_console|debugbar)/i],
+    description: '检测到调试/测试端点访问',
+    remediation: '生产环境禁用调试端点，配置访问白名单'
+  },
 ]
 
 // ==================== MITRE ATT&CK 映射 ====================
@@ -673,6 +847,12 @@ const MITRE_MAPPING: Record<string, { tactic: string; tacticName: string; techni
   'HTTP头注入':   { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
   '开放重定向':    { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1189', techniqueName: 'Drive-by Compromise' },
   '信息泄露':      { tactic: 'TA0007', tacticName: 'Discovery', technique: 'T1082', techniqueName: 'System Information Discovery' },
+  'Log4j注入':    { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  'Spring4Shell':  { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  'WebShell检测':  { tactic: 'TA0003', tacticName: 'Persistence', technique: 'T1505', techniqueName: 'Server Software Component' },
+  'API滥用':      { tactic: 'TA0001', tacticName: 'Initial Access', technique: 'T1190', techniqueName: 'Exploit Public-Facing Application' },
+  '爬虫Bot':      { tactic: 'TA0043', tacticName: 'Reconnaissance', technique: 'T1595', techniqueName: 'Active Scanning' },
+  '敏感文件':      { tactic: 'TA0007', tacticName: 'Discovery', technique: 'T1083', techniqueName: 'File and Directory Discovery' },
 }
 
 // CWE 编号映射
@@ -695,10 +875,16 @@ const CWE_MAPPING: Record<string, string> = {
   'HTTP头注入': 'CWE-113',
   '开放重定向': 'CWE-601',
   '信息泄露': 'CWE-200',
+  'Log4j注入': 'CWE-502',
+  'Spring4Shell': 'CWE-94',
+  'WebShell检测': 'CWE-94',
+  'API滥用': 'CWE-284',
+  '爬虫Bot': 'CWE-200',
+  '敏感文件': 'CWE-538',
 }
 
 // 为规则批量注入 MITRE ATT&CK 映射和 CWE 编号
-for (const rule of RULES) {
+for (const rule of BUILT_IN_RULES) {
   if (!rule.mitre && MITRE_MAPPING[rule.category]) {
     rule.mitre = MITRE_MAPPING[rule.category]
   }
@@ -769,19 +955,22 @@ export function deduplicateMatches(matches: RuleMatch[]): AggregatedAlert[] {
 
 // ==================== 分析引擎 ====================
 
-export function analyzeWithRules(lines: string[], progressCallback?: (msg: string) => void): RuleAnalysisResult {
+export function analyzeWithRules(lines: string[], progressCallback?: (msg: string) => void, customRules?: Rule[]): RuleAnalysisResult {
   const matches: RuleMatch[] = []
   const categoryStats: Record<string, number> = {}
   const summary = { critical: 0, high: 0, medium: 0, low: 0 }
 
+  // 合并内置规则和自定义规则
+  const allRules = customRules ? [...BUILT_IN_RULES, ...customRules] : BUILT_IN_RULES
+
   const totalLines = lines.length
-  progressCallback?.(`规则引擎开始扫描 ${totalLines} 行日志...`)
+  progressCallback?.(`规则引擎开始扫描 ${totalLines} 行日志...（${allRules.length} 条规则）`)
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (!line.trim()) continue
 
-    for (const rule of RULES) {
+    for (const rule of allRules) {
       for (const pattern of rule.patterns) {
         // 重置 lastIndex 因为 g 标志
         pattern.lastIndex = 0
@@ -938,4 +1127,4 @@ function generateRuleReport(
   return report
 }
 
-export { RULES }
+export { BUILT_IN_RULES as RULES }

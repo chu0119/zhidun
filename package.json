@@ -16,6 +16,7 @@
     "docx": "^9.0.2",
     "echarts": "^5.5.1",
     "echarts-for-react": "^3.0.2",
+    "electron-updater": "^6.8.3",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "iconv-lite": "^0.6.3",
@@ -47,12 +48,21 @@
   "build": {
     "appId": "com.xingchuan.zhidun",
     "productName": "星川智盾",
+    "publish": {
+      "provider": "github",
+      "owner": "chu0119",
+      "repo": "zhidun"
+    },
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/chardet/**/*",
+      "node_modules/iconv-lite/**/*"
     ],
     "win": {
       "target": "nsis",

@@ -1,6 +1,7 @@
 // 启动动画覆盖层 - 增强版
 
 import React, { useEffect, useState } from 'react'
+import { APP_VERSION } from '@/core/constants'
 
 interface SplashOverlayProps {
   onComplete: () => void
@@ -188,7 +189,7 @@ export function SplashOverlay({ onComplete }: SplashOverlayProps) {
       {/* 底部版本信息 */}
       <div className="pb-6 text-center">
         <div className="text-xs text-[var(--text-dim)] font-mono tracking-wider">
-          v1.0.0 &nbsp;|&nbsp; 星川智盾安全团队 &nbsp;|&nbsp; &copy; 2025
+          v{APP_VERSION} &nbsp;|&nbsp; 星川智盾安全团队 &nbsp;|&nbsp; &copy; 2025
         </div>
       </div>
 

@@ -42,7 +42,7 @@ export function StatusBar() {
         </div>
         {currentFile && (
           <span className="text-[var(--text-secondary)]">
-            文件: {currentFile}
+            文件: {currentFile.includes('|') ? currentFile.split('|').pop() : currentFile}
           </span>
         )}
       </div>

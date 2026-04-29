@@ -1,6 +1,7 @@
 // 自定义标题栏
 
 import React from 'react'
+import { APP_VERSION } from '@/core/constants'
 
 interface TitleBarProps {
   extraButtons?: React.ReactNode
@@ -25,7 +26,7 @@ export function TitleBar({ extraButtons }: TitleBarProps) {
           style={{ color: 'var(--accent-primary)', textShadow: '0 0 10px var(--glow-color)' }}>
           星川智盾
         </span>
-        <span className="text-xs text-[var(--text-dim)] font-mono">v1.0.0</span>
+        <span className="text-xs text-[var(--text-dim)] font-mono">v{APP_VERSION}</span>
 
         {/* 额外按钮（历史、设置等） */}
         {extraButtons && (

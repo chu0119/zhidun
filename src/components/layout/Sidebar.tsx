@@ -77,8 +77,32 @@ export function Sidebar({ onStartAnalysis, onStopAnalysis, onLocalAnalysis, onEx
             )}
           </div>
         </button>
-        <div className="mt-2 text-xs text-[var(--text-dim)]">
-          支持: .log .txt .csv .json .ndjson .jsonl
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs text-[var(--text-dim)]">
+            支持: .log .txt .csv .json
+          </span>
+          <button
+            onClick={async () => {
+              const folderPath = await window.electronAPI.openFolder()
+              if (folderPath) {
+                const result = await window.electronAPI.listLogFiles(folderPath)
+                if (result.success && result.files && result.files.length > 0) {
+                  const firstFile = result.files[0]
+                  const info = await window.electronAPI.getFileInfo(firstFile)
+                  if (info.success) {
+                    setFileName(info.info.name)
+                    setFilePath(firstFile)
+                    setCurrentFile(`${firstFile}|${info.info.name}`)
+                    addProgress(`已选择文件夹: ${folderPath} (${result.files.length} 个日志文件)`)
+                  }
+                }
+              }
+            }}
+            className="text-xs text-[var(--accent-primary)] hover:text-[var(--accent-primary)]/80 transition-colors"
+            title="选择文件夹"
+          >
+            文件夹
+          </button>
         </div>
       </div>
 
