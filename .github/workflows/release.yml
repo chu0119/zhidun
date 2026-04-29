@@ -8,8 +8,18 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: release/*.exe
+          - os: macos-latest
+            artifact: release/*.dmg
+          - os: ubuntu-latest
+            artifact: release/*.AppImage
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -32,6 +42,5 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release/*.exe
+          files: ${{ matrix.artifact }}
           generate_release_notes: true

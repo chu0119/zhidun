@@ -1,7 +1,7 @@
 // 自适应缩放图表组件
-// 根据字体大小设置自动调整图表高度，并通过 ResizeObserver 确保 ECharts 正确响应尺寸变化
+// 根据字体大小设置自动调整图表高度和内部字体，确保缩放后图表完全自适应
 
-import React, { useRef, useEffect, useCallback, type CSSProperties } from 'react'
+import React, { useRef, useEffect, useMemo, type CSSProperties } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { useConfigStore } from '@/stores/config-store'
 
@@ -12,6 +12,33 @@ interface ScalingChartProps {
   style?: CSSProperties
   notMerge?: boolean
   lazyUpdate?: boolean
+  scaleFonts?: boolean     // 是否自动缩放内部字体，默认 true（ChartsPanel 已手动缩放，设为 false）
+}
+
+// 递归缩放对象中所有 fontSize 属性
+function scaleFontSizes(obj: any, scale: number): any {
+  if (!obj || typeof obj !== 'object') return obj
+  if (Array.isArray(obj)) return obj.map(item => scaleFontSizes(item, scale))
+
+  const result: any = {}
+  for (const key of Object.keys(obj)) {
+    const val = obj[key]
+    if (key === 'fontSize' && typeof val === 'number') {
+      result[key] = Math.round(val * scale)
+    } else if (key === 'rich' && typeof val === 'object') {
+      // ECharts rich text 中的 fontSize
+      const rich: any = {}
+      for (const rk of Object.keys(val)) {
+        rich[rk] = scaleFontSizes(val[rk], scale)
+      }
+      result[key] = rich
+    } else if (typeof val === 'object') {
+      result[key] = scaleFontSizes(val, scale)
+    } else {
+      result[key] = val
+    }
+  }
+  return result
 }
 
 export function ScalingChart({
@@ -21,6 +48,7 @@ export function ScalingChart({
   style,
   notMerge = false,
   lazyUpdate = true,
+  scaleFonts = true,
 }: ScalingChartProps) {
   const chartRef = useRef<ReactECharts>(null)
   const scale = useConfigStore(s => s.config.fontSizes.panels / 13)
@@ -32,13 +60,11 @@ export function ScalingChart({
     const wrapper = chartRef.current?.ele
     if (!wrapper) return
 
-    const observer = new ResizeObserver((entries) => {
-      // 跳过初始 mount 触发
+    const observer = new ResizeObserver(() => {
       if (skipNextResize.current) {
         skipNextResize.current = false
         return
       }
-      // 防抖：避免频繁 resize
       clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => {
         const instance = chartRef.current?.getEchartsInstance?.()
@@ -55,14 +81,23 @@ export function ScalingChart({
     }
   }, [])
 
-  if (!option) return null
+  // 同步缩放高度和内部字体大小
+  const scaledOption = useMemo(
+    () => {
+      if (!option) return null
+      return scaleFonts ? scaleFontSizes(option, scale) : option
+    },
+    [option, scale, scaleFonts]
+  )
+
+  if (!scaledOption) return null
 
   const scaledHeight = Math.round(baseHeight * scale)
 
   return (
     <ReactECharts
       ref={chartRef}
-      option={option}
+      option={scaledOption}
       notMerge={notMerge}
       lazyUpdate={lazyUpdate}
       className={className}

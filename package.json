@@ -1,6 +1,6 @@
 {
   "name": "zhidun-electron",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "description": "星川智盾 AI 网站日志安全分析工具",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -71,8 +71,18 @@
       "node_modules/geoip-lite/**/*"
     ],
     "win": {
-      "target": "nsis",
+      "target": ["nsis"],
       "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "assets/icon.png",
+      "category": "Utility"
     },
     "nsis": {
       "oneClick": false,

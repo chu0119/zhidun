@@ -533,49 +533,49 @@ export function ChartsPanel() {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-2 animate-fade-in">
           {/* 核心统计 */}
           <div className="glass-card p-3">
-            <ScalingChart option={attackTypeOption} baseHeight={280} />
+            <ScalingChart option={attackTypeOption} baseHeight={280} scaleFonts={false} />
           </div>
           <div className="glass-card p-3">
-            <ScalingChart option={riskLevelOption} baseHeight={280} />
+            <ScalingChart option={riskLevelOption} baseHeight={280} scaleFonts={false} />
           </div>
           <div className="glass-card p-3">
-            <ScalingChart option={timelineOption} baseHeight={280} />
+            <ScalingChart option={timelineOption} baseHeight={280} scaleFonts={false} />
           </div>
           <div className="glass-card p-3">
-            <ScalingChart option={ipStatsOption} baseHeight={280} />
+            <ScalingChart option={ipStatsOption} baseHeight={280} scaleFonts={false} />
           </div>
           {/* 流量来源 + 状态码 */}
           {botCategoryOption && (
             <div className="glass-card p-3">
-              <ScalingChart option={botCategoryOption} baseHeight={280} />
+              <ScalingChart option={botCategoryOption} baseHeight={280} scaleFonts={false} />
             </div>
           )}
           {statusCodeOption && (
             <div className="glass-card p-3">
-              <ScalingChart option={statusCodeOption} baseHeight={280} />
+              <ScalingChart option={statusCodeOption} baseHeight={280} scaleFonts={false} />
             </div>
           )}
           {/* IP / URL 排行 */}
           {ipDistributionOption && (
             <div className="glass-card p-3">
-              <ScalingChart option={ipDistributionOption} baseHeight={350} />
+              <ScalingChart option={ipDistributionOption} baseHeight={350} scaleFonts={false} />
             </div>
           )}
           {urlPathOption && (
             <div className="glass-card p-3">
-              <ScalingChart option={urlPathOption} baseHeight={350} />
+              <ScalingChart option={urlPathOption} baseHeight={350} scaleFonts={false} />
             </div>
           )}
           {/* 恶意扫描器 */}
           {maliciousBotOption && (
             <div className="glass-card p-3">
-              <ScalingChart option={maliciousBotOption} baseHeight={280} />
+              <ScalingChart option={maliciousBotOption} baseHeight={280} scaleFonts={false} />
             </div>
           )}
           {/* GeoIP 世界地图（全宽） */}
           {worldMapOption && (
             <div className="glass-card p-3 xl:col-span-2">
-              <ScalingChart option={worldMapOption} baseHeight={400} />
+              <ScalingChart option={worldMapOption} baseHeight={400} scaleFonts={false} />
             </div>
           )}
         </div>

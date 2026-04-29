@@ -43,13 +43,18 @@ export function PathAnalysisPanel() {
       }
     }
 
-    // 标记攻击路径
+    // 标记攻击路径（按行号去重，同一行匹配多条规则只计一次）
     if (ruleResult) {
+      const counted = new Set<string>()
       for (const match of ruleResult.matches) {
         const urlMatch = match.line.match(/"(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+([^\s"]+)/i)
         if (urlMatch) {
           const path = urlMatch[2].split('?')[0]
-          if (paths[path]) paths[path].attacks++
+          const key = `${path}:${match.lineNumber}`
+          if (paths[path] && !counted.has(key)) {
+            counted.add(key)
+            paths[path].attacks++
+          }
         }
       }
     }
@@ -72,57 +77,81 @@ export function PathAnalysisPanel() {
       }))
   }, [pathStats])
 
-  // Top 路径柱状图（蝴蝶图：攻击向左，正常向右）
+  // Top 路径柱状图（分段堆叠柱形图：正常 + 攻击）
   const topPathOption = useMemo(() => {
     const top15 = pathStats.slice(0, 15)
     if (top15.length === 0) return null
 
-    const reversedPaths = top15.map(([path]) => path.length > 30 ? '...' + path.slice(-27) : path).reverse()
-    const reversedAttack = top15.map(([_, data]) => -data.attacks).reverse()
-    const reversedNormal = top15.map(([_, data]) => data.total - data.attacks).reverse()
+    const paths = top15.map(([path]) => path.length > 30 ? '...' + path.slice(-27) : path).reverse()
+    const normalData = top15.map(([_, d]) => Math.max(0, d.total - d.attacks)).reverse()
+    const attackData = top15.map(([_, d]) => Math.min(d.attacks, d.total)).reverse()
 
     return {
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'axis',
+        axisPointer: { type: 'shadow' },
         formatter: (params: any) => {
           if (!params || params.length === 0) return ''
           const idx = params[0].dataIndex
-          const [path, stats] = top15[top15.length - 1 - idx]
-          return `${path}<br/>访问: <b>${stats.total}</b> 次<br/>正常: ${stats.total - stats.attacks} 次<br/>攻击: <span style="color:#ff003c">${stats.attacks}</span> 次`
+          const origIdx = top15.length - 1 - idx
+          const [path, stats] = top15[origIdx]
+          const rate = stats.total > 0 ? Math.round((stats.attacks / stats.total) * 100) : 0
+          return [
+            path,
+            `总访问: <b>${stats.total}</b> 次`,
+            `正常: ${stats.total - stats.attacks} 次`,
+            `攻击: <span style="color:#ff003c">${stats.attacks}</span> 次 (${rate}%)`,
+          ].join('<br/>')
         },
       },
-      grid: { top: 10, right: 10, bottom: 5, left: 10 },
+      legend: {
+        data: ['正常', '攻击'],
+        textStyle: { color: '#999', fontSize: 10 },
+        top: 0,
+        right: 0,
+      },
+      grid: { top: 28, right: 20, bottom: 5, left: 10, containLabel: true },
       xAxis: {
         type: 'value',
-        axisLabel: {
-          color: '#999',
-          fontSize: 10,
-          formatter: (v: number) => Math.abs(v).toString(),
-        },
+        axisLabel: { color: '#999', fontSize: 10 },
         splitLine: { lineStyle: { color: '#222' } },
       },
       yAxis: {
         type: 'category',
-        data: reversedPaths,
-        axisLabel: { color: '#ccc', fontSize: 9, width: 130, overflow: 'truncate', align: 'center' },
+        data: paths,
+        axisLabel: { color: '#ccc', fontSize: 9, width: 130, overflow: 'truncate' },
         axisLine: { lineStyle: { color: '#333' } },
-        axisTick: { show: false },
       },
       series: [
         {
+          name: '正常',
           type: 'bar',
-          data: reversedAttack,
-          itemStyle: { color: '#ff003c', borderRadius: [4, 0, 0, 4] },
+          stack: 'total',
+          data: normalData,
           barWidth: '60%',
-          name: '攻击',
+          itemStyle: { color: accentColor + '80', borderRadius: [0, 0, 0, 0] },
+          label: {
+            show: true,
+            position: 'inside',
+            color: '#fff',
+            fontSize: 9,
+            formatter: (p: any) => p.value > 0 ? p.value : '',
+          },
         },
         {
+          name: '攻击',
           type: 'bar',
-          data: reversedNormal,
-          itemStyle: { color: accentColor + '60', borderRadius: [0, 4, 4, 0] },
-          barWidth: '60%',
-          name: '正常',
+          stack: 'total',
+          data: attackData,
+          itemStyle: { color: '#ff003c', borderRadius: [0, 4, 4, 0] },
+          label: {
+            show: true,
+            position: 'inside',
+            color: '#fff',
+            fontSize: 9,
+            formatter: (p: any) => p.value > 0 ? p.value : '',
+          },
         },
       ],
     }
