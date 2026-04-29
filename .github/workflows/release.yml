@@ -10,13 +10,17 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
+            build_cmd: npx electron-builder --win --publish never
             artifact: release/*.exe
           - os: macos-latest
+            build_cmd: npx electron-builder --mac --publish never
             artifact: release/*.dmg
           - os: ubuntu-latest
+            build_cmd: npx electron-builder --linux --publish never
             artifact: release/*.AppImage
 
     runs-on: ${{ matrix.os }}
@@ -28,14 +32,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Vite build
+        run: npx vite build
+
       - name: Build Electron app
-        run: npm run build
+        run: ${{ matrix.build_cmd }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
