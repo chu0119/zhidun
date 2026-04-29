@@ -8,23 +8,9 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            build_cmd: npx electron-builder --win --publish never
-            artifact: release/*.exe
-          - os: macos-latest
-            build_cmd: npx electron-builder --mac --publish never
-            artifact: release/*.dmg
-          - os: ubuntu-latest
-            build_cmd: npx electron-builder --linux --publish never
-            artifact: release/*.AppImage
-
-    runs-on: ${{ matrix.os }}
-
+  # ─── Windows: x64 + arm64 安装包 + x64 便携版 ───
+  build-windows:
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,13 +30,105 @@ jobs:
       - name: Vite build
         run: npx vite build
 
-      - name: Build Electron app
-        run: ${{ matrix.build_cmd }}
+      - name: Build Windows x64 (NSIS + Portable)
+        run: npx electron-builder --win nsis portable --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Windows arm64 (NSIS)
+        run: npx electron-builder --win nsis --arm64 --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact }}
+          files: |
+            release/*.exe
+          generate_release_notes: true
+
+  # ─── macOS: x64 (Intel) + arm64 (Apple Silicon) ───
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Vite build
+        run: npx vite build
+
+      - name: Build macOS arm64 (Apple Silicon)
+        run: npx electron-builder --mac dmg --arm64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build macOS x64 (Intel)
+        run: npx electron-builder --mac dmg --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+          generate_release_notes: true
+
+  # ─── Linux: x64 AppImage/deb/rpm + arm64 AppImage ───
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install arm64 cross-compilation tools
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Vite build
+        run: npx vite build
+
+      - name: Build Linux x64 (AppImage + deb + rpm)
+        run: npx electron-builder --linux AppImage deb rpm --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux arm64 (AppImage)
+        run: npx electron-builder --linux AppImage --arm64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
           generate_release_notes: true
