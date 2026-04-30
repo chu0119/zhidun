@@ -8,14 +8,14 @@
 
 ### `⟐` AI 驱动的网站日志安全分析系统 `⟐`
 
-> **双引擎驱动 · 8 大 AI 平台 · 65+ 安全规则 · 跨平台部署**
+> **双引擎驱动 · 8 大 AI 平台 · 130+ 安全规则 · 30 个攻击类别 · 跨平台部署**
 >
 > 深度检测 Web 日志中的 SQL 注入、XSS、命令注入、WebShell、SSRF 等安全威胁，
 > 生成专业级安全分析报告，守护每一行日志背后的数字疆域。
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.6.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.7.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -275,7 +275,7 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
 
 </div>
 
-基于 **ModSecurity CRS v4** 和 **OWASP Top 10 2021** 标准，**65+ 条高置信度规则**覆盖 **19 个攻击类别**，离线可用，零延迟：
+基于 **ModSecurity CRS v4** 和 **OWASP Top 10 2025** 标准，**130+ 条高置信度规则**覆盖 **30 个攻击类别**，离线可用，零延迟：
 
 <table>
 <tr>
@@ -283,31 +283,42 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
 
 | 类别 | 风险 | OWASP |
 |:---|:---:|:---:|
-| SQL 注入 | `🔴` 危急 | A03 |
-| XSS 攻击 | `🔴` 危急 | A03 |
-| 命令注入 | `🔴` 危急 | A03 |
-| WebShell | `🔴` 危急 | A08 |
-| 反序列化攻击 | `🔴` 危急 | A08 |
-| 模板注入 (SSTI) | `🔴` 危急 | A03 |
+| SQL 注入 (20条) | `🔴` 危急 | A03 |
+| XSS 攻击 (15条) | `🔴` 危急 | A03 |
+| 命令注入 (15条) | `🔴` 危急 | A03 |
+| WebShell (8条) | `🔴` 危急 | A08 |
+| 反序列化攻击 (5条) | `🔴` 危急 | A08 |
+| 模板注入 SSTI (6条) | `🔴` 危急 | A03 |
 | Log4j 注入 | `🔴` 危急 | A09 |
 | Spring 漏洞 | `🔴` 危急 | A06 |
-| SSRF 攻击 | `🔴` 危急 | A10 |
-| 目录遍历 | `🔴` 危急 | A01 |
+| SSRF 攻击 (6条) | `🔴` 危急 | A10 |
+| 目录遍历 (5条) | `🔴` 危急 | A01 |
+| 文件包含 | `🔴` 危急 | A03 |
+| HTTP 请求走私 | `🔴` 危急 | A04 |
+| HTTP 头注入 | `🔴` 危急 | A03 |
+| JWT 攻击 | `🔴` 危急 | A02 |
+| NoSQL 注入 | `🔴` 危急 | A03 |
 
 </td>
 <td width="50%">
 
 | 类别 | 风险 | OWASP |
 |:---|:---:|:---:|
-| 文件包含 | `🔴` 危急 | A03 |
-| HTTP 请求走私 | `🔴` 危急 | A04 |
-| HTTP 头注入 | `🔴` 危急 | A03 |
-| JWT 攻击 | `🔴` 危急 | A02 |
-| 敏感文件访问 | `🟠` 高危 | A01 |
-| 攻击工具 | `🟠` 高危 | A05 |
-| 信息泄露 | `🟡` 中危 | A05 |
-| 暴力破解 | `🟡` 中危 | A07 |
-| 爬虫 Bot | `🔵` 低危 | — |
+| LDAP 注入 | `🔴` 危急 | A03 |
+| XXE 注入 | `🔴` 危急 | A05 |
+| PHP 代码注入 | `🔴` 危急 | A03 |
+| Java 代码注入 | `🔴` 危急 | A03 |
+| GraphQL 注入 | `🟠` 高危 | A03 |
+| 原型污染 | `🔴` 危急 | A08 |
+| 会话固定 | `🟠` 高危 | A07 |
+| HTTP_PROXY 注入 | `🟠` 高危 | A10 |
+| XML-RPC 滥用 | `🟠` 高危 | A05 |
+| 缓存投毒 | `🟠` 高危 | A04 |
+| HTTP 方法覆盖 | `🟡` 中危 | A07 |
+| 敏感文件访问 (5条) | `🟠` 高危 | A01 |
+| 攻击工具 (4条) | `🟠` 高危 | A05 |
+| 信息泄露 (6条) | `🟡` 中危 | A05 |
+| 暴力破解 / 爬虫 | `🟡` 中危 | A07 |
 
 </td>
 </tr>
@@ -448,6 +459,19 @@ ISP 运营商识别
 
 </div>
 
+### v1.7.0 (2026-04-30)
+
+**规则引擎全面升级**
+- 规则总数从 52 条扩展到 130+ 条，覆盖 30 个攻击类别
+- 新增 12 个攻击类别：NoSQL 注入、LDAP 注入、XXE 注入、PHP 代码注入、Java 代码注入、GraphQL 注入、原型污染、会话固定、HTTP_PROXY 注入、XML-RPC 滥用、缓存投毒、HTTP 方法覆盖
+- SQL 注入规则增强至 20 条，覆盖 MySQL/MSSQL/PostgreSQL/SQLite 特有语法、WAF 绕过、认证绕过等
+- XSS 规则增强至 15 条，覆盖 CSS 表达式、HTML 实体绕过、mutation XSS、Cookie 窃取等
+- 命令注入规则增强至 15 条，覆盖 Windows 命令、Base64 编码执行、Shellshock CVE-2014-6271 等
+- 所有规则基于 OWASP CRS v4 标准，MITRE ATT&CK 和 CWE 自动映射更新至 2025 版
+
+**CI/CD 修复**
+- 修复 Linux 构建依赖缺失问题
+
 ### v1.6.0 (2026-04-30)
 
 **跨平台支持**
@@ -522,6 +546,6 @@ ISP 运营商识别
 ![Electron](https://img.shields.io/badge/Powered_by-Electron-47848F?style=flat-square&logo=electron)
 ![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-b44aff?style=flat-square)
 
-**星川智盾** `v1.6.0` · 星川智盾安全团队
+**星川智盾** `v1.7.0` · 星川智盾安全团队
 
 </div>
