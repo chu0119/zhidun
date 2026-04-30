@@ -2,6 +2,10 @@
   "name": "zhidun-electron",
   "version": "1.7.0",
   "description": "星川智盾 AI 网站日志安全分析工具",
+  "author": {
+    "name": "星川智盾安全团队",
+    "email": "zhidun@xingchuan.dev"
+  },
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
