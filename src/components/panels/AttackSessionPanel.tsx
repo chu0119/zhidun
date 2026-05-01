@@ -123,7 +123,10 @@ export function AttackSessionPanel() {
       }
     }
 
-    return Object.values(ipMap).sort((a, b) => b.attacks.length - a.attacks.length)
+    return Object.values(ipMap)
+      .sort((a, b) => b.attacks.length - a.attacks.length)
+      .slice(0, 100)
+      .map(s => ({ ...s, attacks: s.attacks.slice(0, 500) }))
   }, [ruleResult])
 
   const selectedSession = selectedIP ? sessions.find(s => s.ip === selectedIP) : null

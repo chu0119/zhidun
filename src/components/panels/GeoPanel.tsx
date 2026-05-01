@@ -18,10 +18,12 @@ export function GeoPanel() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const accentColor = cyberTheme === 'cyber' ? '#00f0ff'
+  const accentColor = useMemo(() =>
+    cyberTheme === 'cyber' ? '#00f0ff'
     : cyberTheme === 'green' ? '#00ff88'
     : cyberTheme === 'purple' ? '#b44aff'
-    : '#ff003c'
+    : '#ff003c',
+  [cyberTheme])
 
   // 确保世界地图已注册
   ensureWorldMap()
@@ -34,7 +36,7 @@ export function GeoPanel() {
     setLoading(true)
     setError(null)
     try {
-      const ips = extractIPsFromLines(logLines)
+      const ips = extractIPsFromLines(logLines.length > 100000 ? logLines.slice(0, 100000) : logLines)
       if (ips.length === 0) {
         setError('日志中未找到公网 IP 地址')
         setLoading(false)
@@ -93,6 +95,7 @@ export function GeoPanel() {
 
     const scatterData = geoArray
       .filter(g => g.lat && g.lon)
+      .slice(0, 50)
       .map(g => ({
         name: g.ip,
         value: [g.lon, g.lat, 1],
@@ -163,19 +166,17 @@ export function GeoPanel() {
         },
         // IP 散点层
         {
-          type: 'effectScatter',
+          type: scatterData.length > 30 ? 'scatter' : 'effectScatter',
           coordinateSystem: 'geo',
           data: scatterData,
-          symbolSize: 8,
-          showEffectOn: 'render',
-          rippleEffect: {
-            brushType: 'stroke',
-            scale: 3,
-            period: 4,
-          },
+          symbolSize: scatterData.length > 30 ? 6 : 8,
+          ...(scatterData.length <= 30 ? {
+            showEffectOn: 'render',
+            rippleEffect: { brushType: 'stroke', scale: 3, period: 4 },
+          } : {}),
           itemStyle: {
             color: accentColor,
-            shadowBlur: 10,
+            shadowBlur: scatterData.length > 30 ? 0 : 10,
             shadowColor: accentColor,
           },
         },

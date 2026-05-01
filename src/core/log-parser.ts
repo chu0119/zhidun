@@ -26,8 +26,30 @@ export class LogParser {
     return [...SUPPORTED_LOG_FORMATS]
   }
 
-  // 通过 Electron IPC 读取文件
+  // 通过 Electron IPC 读取文件（自动选择普通/流式模式）
   async readFile(maxLines?: number): Promise<{ lines: string[]; encoding: string; totalLines: number }> {
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024 // 100MB
+
+    // 先获取文件信息判断大小
+    const info = await window.electronAPI.getFileInfo(this.filePath)
+    const fileSize = info.success && info.info ? info.info.size : 0
+
+    if (fileSize > LARGE_FILE_THRESHOLD) {
+      // 大文件：流式读取 + 蓄水池采样
+      const result = await window.electronAPI.readLargeTextFile(this.filePath, {
+        maxLines: maxLines || 50000,
+      })
+      if (!result.success) {
+        throw new Error(`读取文件失败: ${result.error}`)
+      }
+      return {
+        lines: result.lines || [],
+        encoding: result.encoding || 'utf-8',
+        totalLines: result.totalLines || 0,
+      }
+    }
+
+    // 小文件：一次性读取
     const result = await window.electronAPI.readTextFile(this.filePath)
     if (!result.success) {
       throw new Error(`读取文件失败: ${result.error}`)

@@ -1774,7 +1774,7 @@ export function deduplicateMatches(matches: RuleMatch[]): AggregatedAlert[] {
     if (map.has(key)) {
       const agg = map.get(key)!
       agg.count++
-      agg.lineNumbers.push(match.lineNumber)
+      if (agg.lineNumbers.length < 1000) agg.lineNumbers.push(match.lineNumber)
       const ts = extractTimestamp(match.line)
       if (ts) {
         if (!agg.firstSeen || ts < agg.firstSeen) agg.firstSeen = ts

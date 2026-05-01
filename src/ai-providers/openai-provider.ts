@@ -15,8 +15,8 @@ export class OpenAIProvider extends BaseAIProvider {
   private getClient(): OpenAI {
     if (!this.client) {
       this.client = new OpenAI({
-        apiKey: this.config.apiKey || 'lm-studio',
-        baseURL: this.config.baseUrl || 'http://localhost:1234/v1',
+        apiKey: this.config.apiKey || '',
+        baseURL: this.config.baseUrl || 'https://api.openai.com/v1',
         timeout: (this.config.timeout || 600) * 1000,
         dangerouslyAllowBrowser: true,
       })

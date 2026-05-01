@@ -9,3 +9,4 @@ release/
 .DS_Store
 Thumbs.db
 copyright/
+samples/mega-access.log

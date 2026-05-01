@@ -1,17 +1,17 @@
-// Kimi (月之暗面) 提供商
+// Google Gemini 提供商 (OpenAI 兼容接口)
 
 import OpenAI from 'openai'
 import { BaseAIProvider, AIProviderError } from './base'
 import type { AIModelConfig, AIResponse, AIMessage } from '@/types/ai-provider'
 
-export class KimiProvider extends BaseAIProvider {
-  providerName = 'kimi'
+export class GeminiProvider extends BaseAIProvider {
+  providerName = 'gemini'
   private client: OpenAI | null = null
 
   constructor(config: AIModelConfig) {
     super({
       ...config,
-      baseUrl: config.baseUrl || 'https://api.moonshot.ai/v1',
+      baseUrl: config.baseUrl || 'https://generativelanguage.googleapis.com/v1beta/openai',
     })
   }
 
@@ -40,7 +40,7 @@ export class KimiProvider extends BaseAIProvider {
       }
 
       const response = await client.chat.completions.create({
-        model: this.config.modelName || 'kimi-k2.6',
+        model: this.config.modelName || 'gemini-2.5-flash',
         messages: allMessages,
         temperature: this.config.temperature || 0.6,
         max_tokens: this.config.maxTokens || 4096,
@@ -48,7 +48,7 @@ export class KimiProvider extends BaseAIProvider {
 
       const choice = response.choices[0]
       if (!choice?.message?.content) {
-        throw new AIProviderError('Kimi 返回空响应')
+        throw new AIProviderError('Gemini 返回空响应')
       }
 
       return {
@@ -62,7 +62,7 @@ export class KimiProvider extends BaseAIProvider {
       }
     } catch (error: any) {
       if (error instanceof AIProviderError) throw error
-      throw new AIProviderError(`Kimi API 错误: ${error.message}`)
+      throw new AIProviderError(`Gemini API 错误: ${error.message}`)
     }
   }
 }

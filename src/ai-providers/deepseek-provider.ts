@@ -11,7 +11,7 @@ export class DeepSeekProvider extends BaseAIProvider {
   constructor(config: AIModelConfig) {
     super({
       ...config,
-      baseUrl: config.baseUrl || 'https://api.deepseek.com/v1',
+      baseUrl: config.baseUrl || 'https://api.deepseek.com',
     })
   }
 
@@ -40,7 +40,7 @@ export class DeepSeekProvider extends BaseAIProvider {
       }
 
       const response = await client.chat.completions.create({
-        model: this.config.modelName || 'deepseek-chat',
+        model: this.config.modelName || 'deepseek-v4-flash',
         messages: allMessages,
         temperature: this.config.temperature || 0.6,
         max_tokens: this.config.maxTokens || 4096,

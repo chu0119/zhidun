@@ -27,7 +27,7 @@ export class QwenProvider extends BaseAIProvider {
       const response = await axios.post(
         `${this.config.baseUrl}/chat/completions`,
         {
-          model: this.config.modelName || 'qwen-turbo',
+          model: this.config.modelName || 'qwen3-max',
           messages: allMessages,
           temperature: this.config.temperature || 0.6,
           max_tokens: this.config.maxTokens || 4096,

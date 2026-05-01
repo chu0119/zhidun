@@ -14,16 +14,19 @@ export function PathAnalysisPanel() {
   const cyberTheme = useThemeStore(s => s.currentTheme)
   const triggerAnalysis = useAppStore(s => s.localAnalysisTrigger)
 
-  const accentColor = cyberTheme === 'cyber' ? '#00f0ff'
+  const accentColor = useMemo(() =>
+    cyberTheme === 'cyber' ? '#00f0ff'
     : cyberTheme === 'green' ? '#00ff88'
     : cyberTheme === 'purple' ? '#b44aff'
-    : '#ff003c'
+    : '#ff003c',
+  [cyberTheme])
 
-  // 从所有日志行中提取 URL 路径
+  // 从日志行中提取 URL 路径（大数据量时限制遍历数量）
   const pathStats = useMemo(() => {
     const paths: Record<string, { total: number; attacks: number; methods: Record<string, number>; statuses: Record<string, number> }> = {}
+    const linesToScan = logLines.length > 100000 ? logLines.slice(0, 100000) : logLines
 
-    for (const line of logLines) {
+    for (const line of linesToScan) {
       const urlMatch = line.match(/"(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+([^\s"]+)/i)
       if (!urlMatch) continue
       const method = urlMatch[1].toUpperCase()

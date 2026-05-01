@@ -179,11 +179,12 @@ export function extractFromReport(reportText: string): {
 }
 
 // 从日志中提取 IP 统计
-export function extractIpStats(lines: string[]): Record<string, number> {
+export function extractIpStats(lines: string[], maxLines: number = 50000): Record<string, number> {
   const ipPattern = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/
   const ipCounts: Record<string, number> = {}
+  const sampleLines = lines.length > maxLines ? lines.slice(0, maxLines) : lines
 
-  for (const line of lines) {
+  for (const line of sampleLines) {
     const match = line.match(ipPattern)
     if (match) {
       const ip = match[1]
@@ -200,12 +201,13 @@ export function extractIpStats(lines: string[]): Record<string, number> {
 }
 
 // 从日志中提取时间线
-export function extractTimeline(lines: string[]): { time: string; count: number }[] {
+export function extractTimeline(lines: string[], maxLines: number = 50000): { time: string; count: number }[] {
   // 严格匹配 Apache 日志时间格式 [29/Apr/2026:14:30:45 +0800]
   const timePattern = /\[(\d{2})\/\w{3}\/\d{4}:([01]\d|2[0-3]):([0-5]\d):([0-5]\d)\s/
   const timeCounts: Record<string, number> = {}
+  const sampleLines = lines.length > maxLines ? lines.slice(0, maxLines) : lines
 
-  for (const line of lines) {
+  for (const line of sampleLines) {
     const match = line.match(timePattern)
     if (match) {
       const hour = match[2] + ':00'

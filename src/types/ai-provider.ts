@@ -28,12 +28,17 @@ export interface AIMessage {
 export type ProviderName =
   | 'lm_studio'
   | 'ollama'
+  | 'openai'
+  | 'anthropic'
+  | 'gemini'
   | 'deepseek'
   | 'qwen'
   | 'wenxin'
   | 'zhipu'
   | 'kimi'
-  | 'openai'
+  | 'siliconflow'
+  | 'mistral'
+  | 'xai'
   | 'custom'
 
 export interface ProviderInfo {

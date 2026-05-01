@@ -12,43 +12,60 @@ export const DEFAULT_API_TIMEOUT = 60.0
 export const MAX_API_TIMEOUT = 600.0
 
 // 文件处理配置
-export const MAX_LOG_FILE_SIZE = 100 * 1024 * 1024 // 100MB
+export const MAX_LOG_FILE_SIZE = 100 * 1024 * 1024 * 1024 // 100GB（流式读取，无实际限制）
+export const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024 // 100MB，超过此大小使用流式读取
 export const DEFAULT_LINES_TO_ANALYZE = 1000
 export const CHUNK_SIZE = 8192
 
 // 默认 API 端点
 export const DEFAULT_API_ENDPOINTS: Record<string, string> = {
-  deepseek: 'https://api.deepseek.com/v1',
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  deepseek: 'https://api.deepseek.com',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-  kimi: 'https://api.moonshot.cn/v1',
-  wenxin: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat',
+  kimi: 'https://api.moonshot.ai/v1',
+  wenxin: 'https://qianfan.baidubce.com/v2',
+  siliconflow: 'https://api.siliconflow.cn/v1',
+  mistral: 'https://api.mistral.ai/v1',
+  xai: 'https://api.x.ai/v1',
   ollama: 'http://localhost:11434',
   lm_studio: 'http://localhost:1234/v1',
-  openai: 'https://api.openai.com/v1',
 }
 
 // 默认模型名称
 export const DEFAULT_MODEL_NAMES: Record<string, string> = {
-  deepseek: 'deepseek-chat',
-  qwen: 'qwen-turbo',
-  zhipu: 'glm-4-flash',
-  kimi: 'moonshot-v1-8k',
-  wenxin: 'ernie-bot-turbo',
-  ollama: 'llama2',
+  openai: 'gpt-4.1',
+  anthropic: 'claude-sonnet-4-6',
+  gemini: 'gemini-2.5-flash',
+  deepseek: 'deepseek-v4-flash',
+  qwen: 'qwen3-max',
+  zhipu: 'glm-4.7',
+  kimi: 'kimi-k2.6',
+  wenxin: 'ernie-5.0',
+  siliconflow: 'deepseek-ai/DeepSeek-V4-Flash',
+  mistral: 'mistral-large-2512',
+  xai: 'grok-4',
+  ollama: 'llama3.3',
   lm_studio: 'local-model',
-  openai: 'gpt-3.5-turbo',
 }
 
 // 提供商信息
 export const PROVIDER_INFO = [
   { name: 'lm_studio', label: 'LM Studio', description: '本地模型服务', defaultBaseUrl: 'http://localhost:1234/v1', defaultModel: 'local-model', requiresApiKey: false },
-  { name: 'ollama', label: 'Ollama', description: '本地大模型运行框架', defaultBaseUrl: 'http://localhost:11434', defaultModel: 'llama2', requiresApiKey: false },
-  { name: 'deepseek', label: 'DeepSeek', description: '深度求索 AI', defaultBaseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat', requiresApiKey: true },
-  { name: 'qwen', label: '通义千问', description: '阿里云大模型', defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen-turbo', requiresApiKey: true },
-  { name: 'wenxin', label: '文心一言', description: '百度大语言模型', defaultBaseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat', defaultModel: 'ernie-bot-turbo', requiresApiKey: true },
-  { name: 'zhipu', label: '智谱 AI', description: '清华智谱 GLM', defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4-flash', requiresApiKey: true },
-  { name: 'kimi', label: 'Kimi', description: '月之暗面大模型', defaultBaseUrl: 'https://api.moonshot.cn/v1', defaultModel: 'moonshot-v1-8k', requiresApiKey: true },
+  { name: 'ollama', label: 'Ollama', description: '本地大模型框架', defaultBaseUrl: 'http://localhost:11434', defaultModel: 'llama3.3', requiresApiKey: false },
+  { name: 'openai', label: 'OpenAI', description: 'GPT-4.1 / o3 旗舰', defaultBaseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4.1', requiresApiKey: true },
+  { name: 'anthropic', label: 'Anthropic', description: 'Claude 4 推理旗舰', defaultBaseUrl: 'https://api.anthropic.com', defaultModel: 'claude-sonnet-4-6', requiresApiKey: true },
+  { name: 'gemini', label: 'Google Gemini', description: '多模态思考模型', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', defaultModel: 'gemini-2.5-flash', requiresApiKey: true },
+  { name: 'deepseek', label: 'DeepSeek', description: '深度推理 V4', defaultBaseUrl: 'https://api.deepseek.com', defaultModel: 'deepseek-v4-flash', requiresApiKey: true },
+  { name: 'qwen', label: '通义千问', description: '阿里 Qwen3 系列', defaultBaseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', defaultModel: 'qwen3-max', requiresApiKey: true },
+  { name: 'wenxin', label: '文心一言', description: '百度 ERNIE 5.0', defaultBaseUrl: 'https://qianfan.baidubce.com/v2', defaultModel: 'ernie-5.0', requiresApiKey: true },
+  { name: 'zhipu', label: '智谱 AI', description: 'GLM-5 系列', defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4', defaultModel: 'glm-4.7', requiresApiKey: true },
+  { name: 'kimi', label: 'Kimi', description: '月之暗面 K2', defaultBaseUrl: 'https://api.moonshot.ai/v1', defaultModel: 'kimi-k2.6', requiresApiKey: true },
+  { name: 'siliconflow', label: '硅基流动', description: '模型聚合平台', defaultBaseUrl: 'https://api.siliconflow.cn/v1', defaultModel: 'deepseek-ai/DeepSeek-V4-Flash', requiresApiKey: true },
+  { name: 'mistral', label: 'Mistral', description: '欧洲旗舰模型', defaultBaseUrl: 'https://api.mistral.ai/v1', defaultModel: 'mistral-large-2512', requiresApiKey: true },
+  { name: 'xai', label: 'xAI Grok', description: 'Grok-4 推理模型', defaultBaseUrl: 'https://api.x.ai/v1', defaultModel: 'grok-4', requiresApiKey: true },
   { name: 'custom', label: '自定义', description: 'OpenAI 兼容接口', defaultBaseUrl: '', defaultModel: '', requiresApiKey: true },
 ] as const
 
@@ -73,7 +90,7 @@ export const ATTACK_TYPES = [
 export const RISK_LEVELS = ['严重', '高危', '中危', '低危', '信息']
 
 // 版本
-export const APP_VERSION = '1.7.0'
+export const APP_VERSION = '1.8.0'
 
 // MITRE ATT&CK 战术颜色映射
 export const MITRE_TACTIC_COLORS: Record<string, string> = {

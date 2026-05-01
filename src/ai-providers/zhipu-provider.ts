@@ -27,7 +27,7 @@ export class ZhipuProvider extends BaseAIProvider {
       const response = await axios.post(
         `${this.config.baseUrl}/chat/completions`,
         {
-          model: this.config.modelName || 'glm-4-flash',
+          model: this.config.modelName || 'glm-4.7',
           messages: allMessages,
           temperature: this.config.temperature || 0.6,
           max_tokens: this.config.maxTokens || 4096,

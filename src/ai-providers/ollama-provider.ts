@@ -27,7 +27,7 @@ export class OllamaProvider extends BaseAIProvider {
       const response = await axios.post(
         `${this.config.baseUrl}/api/chat`,
         {
-          model: this.config.modelName || 'llama2',
+          model: this.config.modelName || 'llama3.3',
           messages: allMessages,
           stream: false,
           options: {

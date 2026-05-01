@@ -8,14 +8,14 @@
 
 ### `⟐` AI 驱动的网站日志安全分析系统 `⟐`
 
-> **双引擎驱动 · 8 大 AI 平台 · 130+ 安全规则 · 30 个攻击类别 · 跨平台部署**
+> **双引擎驱动 · 14 大 AI 平台 · 130+ 安全规则 · 30 个攻击类别 · 跨平台部署**
 >
 > 深度检测 Web 日志中的 SQL 注入、XSS、命令注入、WebShell、SSRF 等安全威胁，
 > 生成专业级安全分析报告，守护每一行日志背后的数字疆域。
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.7.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.8.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -48,8 +48,8 @@
 <b>AI 智能分析</b> 深度语义理解<br/><b>本地规则引擎</b> 65+ 条 OWASP 规则<br/>两种模式独立运行，互不干扰
 </td>
 <td align="center" width="25%">
-<img src="https://img.shields.io/badge/🤖-8大AI平台-b44aff?style=for-the-badge&labelColor=0a0e1a" /><br/><br/>
-DeepSeek · 通义千问 · 智谱<br/>Kimi · 文心 · OpenAI<br/>Ollama · LM Studio（本地部署）
+<img src="https://img.shields.io/badge/🤖-14大AI平台-b44aff?style=for-the-badge&labelColor=0a0e1a" /><br/><br/>
+OpenAI · Anthropic · Gemini · DeepSeek · 通义千问<br/>智谱 · Kimi · 文心 · Mistral · xAI Grok<br/>硅基流动 · Ollama · LM Studio（本地部署）
 </td>
 <td align="center" width="25%">
 <img src="https://img.shields.io/badge/📊-5大分析面板-00ff88?style=for-the-badge&labelColor=0a0e1a" /><br/><br/>
@@ -223,7 +223,7 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
 
 </div>
 
-星川智盾支持 **8 大 AI 平台**，覆盖国内外主流大模型，可根据需求灵活选择：
+星川智盾支持 **14 大 AI 平台**，覆盖国内外主流大模型，可根据需求灵活选择：
 
 <table>
 <tr>
@@ -233,12 +233,17 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
 
 | 提供商 | 默认模型 | 特点 |
 |:---:|:---:|:---|
-| **DeepSeek** | `deepseek-chat` | 性价比最高，推荐首选 |
-| **通义千问** | `qwen-turbo` | 阿里云，中文理解强 |
-| **智谱 AI** | `glm-4-flash` | 清华系，学术背景 |
-| **Kimi** | `moonshot-v1-8k` | 长文本处理优秀 |
-| **文心一言** | `ernie-speed-128k` | 百度系，速度快 |
-| **OpenAI** | `gpt-4o-mini` | 国际通用 |
+| **OpenAI** | `gpt-4.1` | GPT-4.1 / o3 旗舰 |
+| **Anthropic** | `claude-sonnet-4-6` | Claude 4 推理旗舰 |
+| **Google Gemini** | `gemini-2.5-flash` | 多模态思考模型 |
+| **DeepSeek** | `deepseek-v4-flash` | 深度推理 V4，性价比最高 |
+| **通义千问** | `qwen3-max` | 阿里 Qwen3 系列 |
+| **智谱 AI** | `glm-4.7` | GLM-5 系列 |
+| **Kimi** | `kimi-k2.6` | 月之暗面 K2 |
+| **文心一言** | `ernie-5.0` | 百度 ERNIE 5.0 |
+| **硅基流动** | `DeepSeek-V4-Flash` | 模型聚合平台 |
+| **Mistral** | `mistral-large-2512` | 欧洲旗舰模型 |
+| **xAI Grok** | `grok-4` | Grok-4 推理模型 |
 
 </td>
 <td width="50%">
@@ -247,7 +252,7 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
 
 | 提供商 | 默认模型 | 特点 |
 |:---:|:---:|:---|
-| **Ollama** | `qwen2.5:7b` | 完全离线，无需 API Key |
+| **Ollama** | `llama3.3` | 完全离线，无需 API Key |
 | **LM Studio** | `local-model` | GUI 管理，开箱即用 |
 
 <br/>
@@ -459,6 +464,30 @@ ISP 运营商识别
 
 </div>
 
+### v1.8.0 (2026-05-01)
+
+**AI 提供商全面扩展**
+- AI 提供商从 8 个扩展到 14 个，新增 OpenAI、Anthropic Claude、Google Gemini、Mistral、xAI Grok、硅基流动
+- 全部现有提供商默认模型升级至最新版本：DeepSeek V4、Qwen3、GLM-4.7、Kimi K2、ERNIE 5.0、GPT-4.1
+- 文心一言迁移至千帆 v2 API，Kimi 迁移至新域名 api.moonshot.ai
+
+**大文件流式分析**
+- 新增流式规则引擎，支持 100GB+ 日志文件全量扫描，不再受采样限制
+- 超过 100MB 的文件自动启用流式读取，逐行匹配全部 130+ 条规则
+- 流式进度实时推送到渲染进程，支持中途查看扫描进度
+
+**性能优化**
+- 图表组件全面优化：ECharts 配置使用 useMemo 缓存，数据量限制防卡顿
+- 攻击会话面板限制为 100 个 IP × 500 条攻击记录
+- 地理分布面板限制为 50 个散点，超过 30 个自动降级为普通散点图
+- 路径分析面板扫描行数限制为 10 万行
+- 规则引擎去重结果 lineNumbers 数组上限 1000 条，防止内存溢出
+
+**稳定性修复**
+- 修复大文件分析时 IPC 数据量过大导致应用崩溃的问题
+- 修复规则引擎仅加载自定义规则、遗漏内置 130 条规则的严重 bug
+- 修复日志行数统计和时间线提取在大文件上的性能瓶颈
+
 ### v1.7.0 (2026-04-30)
 
 **规则引擎全面升级**
@@ -546,6 +575,6 @@ ISP 运营商识别
 ![Electron](https://img.shields.io/badge/Powered_by-Electron-47848F?style=flat-square&logo=electron)
 ![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-b44aff?style=flat-square)
 
-**星川智盾** `v1.7.0` · 星川智盾安全团队
+**星川智盾** `v1.8.0` · 星川智盾安全团队
 
 </div>

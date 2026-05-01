@@ -120,48 +120,51 @@ export function ChartsPanel() {
     }],
   }
 
-  // IP 统计横向柱图
-  const ipStatsOption = {
-    ...baseOption,
-    title: {
-      text: '攻击源 IP 统计',
-      left: 'center',
-      top: 10,
-      textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
-    },
-    tooltip: { trigger: 'axis' },
-    grid: { left: '25%', right: '10%', bottom: '10%', top: '20%' },
-    xAxis: {
-      type: 'value',
-      axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
-      splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } },
-      axisLabel: { color: '#7a8ba8' },
-    },
-    yAxis: {
-      type: 'category',
-      data: chartData?.ipStats?.map(ip => ip.name) || ['暂无数据'],
-      axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
-      axisLabel: { color: '#7a8ba8', fontSize: Math.round(11 * scale) },
-    },
-    series: [{
-      type: 'bar',
-      barWidth: '50%',
-      data: chartData?.ipStats?.map(ip => ({
-        value: ip.value,
-        itemStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 1, y2: 0,
-            colorStops: [
-              { offset: 0, color: 'rgba(0, 0, 0, 0.3)' },
-              { offset: 1, color: '#00f0ff' },
-            ],
+  // IP 统计横向柱图（限制 Top 20）
+  const ipStatsOption = useMemo(() => {
+    const topIPs = chartData?.ipStats?.slice(0, 20) || []
+    return {
+      ...baseOption,
+      title: {
+        text: '攻击源 IP 统计',
+        left: 'center',
+        top: 10,
+        textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
+      },
+      tooltip: { trigger: 'axis' },
+      grid: { left: '25%', right: '10%', bottom: '10%', top: '20%' },
+      xAxis: {
+        type: 'value',
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } },
+        axisLabel: { color: '#7a8ba8' },
+      },
+      yAxis: {
+        type: 'category',
+        data: topIPs.map(ip => ip.name),
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        axisLabel: { color: '#7a8ba8', fontSize: Math.round(11 * scale) },
+      },
+      series: [{
+        type: 'bar',
+        barWidth: '50%',
+        data: topIPs.map(ip => ({
+          value: ip.value,
+          itemStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 1, y2: 0,
+              colorStops: [
+                { offset: 0, color: 'rgba(0, 0, 0, 0.3)' },
+                { offset: 1, color: '#00f0ff' },
+              ],
+            },
+            borderRadius: [0, 4, 4, 0],
           },
-          borderRadius: [0, 4, 4, 0],
-        },
-      })) || [0],
-    }],
-  }
+        })),
+      }],
+    }
+  }, [chartData?.ipStats, scale])
 
   // 时间线折线图
   const timelineOption = {
@@ -215,7 +218,7 @@ export function ChartsPanel() {
     for (const agg of localRuleResult.aggregatedAlerts) {
       ipCounts.set(agg.sourceIP, (ipCounts.get(agg.sourceIP) || 0) + agg.count)
     }
-    return generateMapScatterData(geoIPResults, ipCounts)
+    return generateMapScatterData(geoIPResults, ipCounts).slice(0, 100)
   }, [geoIPResults, localRuleResult])
 
   const worldMapOption = hasGeoData ? {

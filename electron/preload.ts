@@ -16,6 +16,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File operations
   readFile: (filePath: string) => ipcRenderer.invoke('file:read', filePath),
   readTextFile: (filePath: string) => ipcRenderer.invoke('file:readText', filePath),
+  readLargeTextFile: (filePath: string, options?: { maxLines?: number; encoding?: string }) =>
+    ipcRenderer.invoke('file:readLargeText', filePath, options),
+  countLines: (filePath: string) => ipcRenderer.invoke('file:countLines', filePath),
+  streamAnalyze: (filePath: string, rules: any[]) => ipcRenderer.invoke('file:streamAnalyze', filePath, rules),
+  onStreamProgress: (callback: (data: { linesScanned: number; matchesFound: number }) => void) => {
+    const handler = (_event: any, data: { linesScanned: number; matchesFound: number }) => callback(data)
+    ipcRenderer.on('stream:progress', handler)
+    return () => ipcRenderer.removeListener('stream:progress', handler)
+  },
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('file:write', filePath, content),
   getFileInfo: (filePath: string) => ipcRenderer.invoke('file:getInfo', filePath),
 

@@ -1,9 +1,11 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import readline from 'readline'
 import { createAppMenu } from './menu'
 import { setupContextMenu } from './context-menu'
 import { setupAutoUpdater } from './updater'
+import { streamAnalyze, StreamingRule } from './streaming-analyzer'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -159,6 +161,106 @@ function setupIPC() {
       return { success: true, text, encoding, size: buffer.length }
     } catch (error: any) {
       return { success: false, error: error.message }
+    }
+  })
+
+  // 流式读取大文件：采样 + 威胁行优先
+  ipcMain.handle('file:readLargeText', async (_, filePath: string, options?: {
+    maxLines?: number
+    encoding?: string
+  }) => {
+    try {
+      const maxLines = options?.maxLines || 50000
+      const chardet = require('chardet')
+
+      // 先读一小块检测编码
+      const sampleBuf = Buffer.alloc(64 * 1024)
+      const fd = fs.openSync(filePath, 'r')
+      const bytesRead = fs.readSync(fd, sampleBuf, 0, sampleBuf.length, 0)
+      fs.closeSync(fd)
+      const detectedEncoding = chardet.detect(sampleBuf.slice(0, bytesRead)) || 'utf-8'
+      const encoding = options?.encoding || detectedEncoding
+
+      // 威胁关键词（用于优先保留攻击行）
+      const threatRe = /union\s+select|<script|onerror=|onload=|alert\(|etc\/passwd|passwd|shadow|\.\.\/|cmd|exec|eval\(|system\(|shell|wget|curl|sqlmap|nikto|nmap|burp|hydra|sleep\(|benchmark|drop\s+table|insert\s+into|delete\s+from|__proto__|constructor\.prototype|\$where|\$gt|\$ne|\$regex|file:\/\/|gopher:\/\/|dict:\/\/|169\.254\.169\.254|\(\)\s*\{.*\;\}|\/bin\/(bash|sh)|powershell|base64|deserializ|pickle|jndi:|ldap:|xml.*entity|DOCTYPE/i
+
+      // 流式读取 + 蓄水池采样
+      const reservoir: string[] = []
+      const threatLines: string[] = []
+      let totalLines = 0
+
+      const iconv = require('iconv-lite')
+      const stream = fs.createReadStream(filePath)
+      const decoded = stream.pipe(iconv.decodeStream(encoding))
+      const rl = readline.createInterface({ input: decoded, crlfDelay: Infinity })
+
+      for await (const line of rl) {
+        if (!line.trim()) continue
+        totalLines++
+
+        const isThreat = threatRe.test(line)
+
+        // 蓄水池采样：前 maxLines 行直接保留，之后以概率 maxLines/totalLines 替换
+        if (reservoir.length < maxLines) {
+          reservoir.push(line)
+        } else {
+          const j = Math.floor(Math.random() * totalLines)
+          if (j < maxLines) {
+            reservoir[j] = line
+          }
+        }
+
+        // 威胁行单独保留（最多 maxLines 的 30%）
+        if (isThreat && threatLines.length < Math.floor(maxLines * 0.3)) {
+          threatLines.push(line)
+        }
+      }
+
+      // 合并：威胁行 + 采样行，去重后按原始顺序
+      const combined = new Set<string>(threatLines)
+      for (const line of reservoir) combined.add(line)
+
+      return {
+        success: true,
+        lines: Array.from(combined),
+        totalLines,
+        encoding,
+        size: fs.statSync(filePath).size,
+        sampledLines: combined.size,
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 流式统计文件行数（快速，不保留内容）
+  ipcMain.handle('file:countLines', async (_, filePath: string) => {
+    try {
+      let count = 0
+      const stream = fs.createReadStream(filePath)
+      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
+      for await (const _ of rl) {
+        count++
+      }
+      return { success: true, totalLines: count }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 流式规则引擎全量扫描（大文件专用，不采样，逐行匹配）
+  ipcMain.handle('file:streamAnalyze', async (_, filePath: string, rules: StreamingRule[]) => {
+    try {
+      const result = await streamAnalyze(filePath, rules, {
+        maxMatches: 50000,
+        onProgress: (linesScanned, matchesFound) => {
+          // 通过 webContents 发送进度到渲染进程
+          mainWindow?.webContents.send('stream:progress', { linesScanned, matchesFound })
+        },
+      })
+      return result
+    } catch (error: any) {
+      return { success: false, error: error.message, totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
     }
   })
 

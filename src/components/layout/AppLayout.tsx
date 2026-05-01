@@ -28,7 +28,8 @@ import { LogAnalyzer, estimateTokens } from '@/core/analyzer'
 import { LogParser } from '@/core/log-parser'
 import { compressLogForAI, smartSample } from '@/core/log-processor'
 import { exportToDocx, exportToPdf } from '@/core/report-generator'
-import { analyzeWithRules } from '@/core/rule-engine'
+import { analyzeWithRules, deduplicateMatches } from '@/core/rule-engine'
+import type { RuleMatch, RuleAnalysisResult } from '@/core/rule-engine'
 import { extractIPsFromLines, lookupIPs } from '@/core/geoip'
 import { detectBots } from '@/core/bot-detector'
 import { useQueueStore, QueueItem } from '@/stores/queue-store'
@@ -40,6 +41,59 @@ import {
 } from '@/core/demo-messages'
 
 type TabKey = 'ai-analysis' | 'ai-report' | 'local-analysis' | 'local-report' | 'threat' | 'attack' | 'session' | 'charts' | 'path' | 'geo'
+
+// 流式扫描报告生成（大文件专用）
+function generateStreamingReport(
+  totalLines: number,
+  matchedLines: number,
+  totalMatches: number,
+  summary: { critical: number; high: number; medium: number; low: number; info: number },
+  categoryStats: Record<string, number>,
+  aggregatedAlerts: any[]
+): string {
+  const now = new Date().toLocaleString('zh-CN')
+  const totalThreats = summary.critical + summary.high + summary.medium + summary.low
+
+  let report = `【安全分析报告 - 本地规则引擎】\n\n`
+  report += `1. 事件概述\n`
+  report += `   • 检测时间：${now}\n`
+  report += `   • 分析方式：本地规则引擎（流式全量扫描）\n`
+  report += `   • 扫描行数：${totalLines.toLocaleString()}\n`
+  report += `   • 告警总数：${totalMatches.toLocaleString()}\n`
+  report += `   • 命中行数：${matchedLines.toLocaleString()}\n`
+  report += `   • 置信度：${totalThreats > 0 ? '95%' : 'N/A'}\n\n`
+
+  report += `2. 技术分析\n`
+  if (aggregatedAlerts.length > 0) {
+    report += `   • 检测到 ${Object.keys(categoryStats).length} 个攻击类别\n`
+    report += `   • 共 ${aggregatedAlerts.length} 种独立攻击模式\n`
+    const sorted = Object.entries(categoryStats).sort((a, b) => b[1] - a[1])
+    for (const [cat, count] of sorted) {
+      report += `   • ${cat}：${count} 次告警\n`
+    }
+  } else {
+    report += `   • 未检测到明显攻击特征\n`
+  }
+
+  report += `\n3. 风险评估\n`
+  report += `   • 严重：${summary.critical}\n`
+  report += `   • 高危：${summary.high}\n`
+  report += `   • 中危：${summary.medium}\n`
+  report += `   • 低危：${summary.low}\n\n`
+
+  report += `4. 处置建议\n`
+  if (totalThreats > 0) {
+    report += `   • 立即封禁攻击源 IP\n`
+    report += `   • 检查被攻击路径是否存在漏洞\n`
+    report += `   • 加强 WAF 规则配置\n`
+    report += `   • 审查服务器日志和文件完整性\n`
+  } else {
+    report += `   • 当前日志未发现明显安全威胁\n`
+    report += `   • 建议定期进行安全扫描\n`
+  }
+
+  return report
+}
 
 export function AppLayout() {
   const [activeTab, setActiveTab] = useState<TabKey>('local-analysis')
@@ -113,11 +167,125 @@ export function AppLayout() {
     try {
       await showLocalAnalysisPhase1(progressStore, getStatus)
 
-      const fileResult = await window.electronAPI.readTextFile(fullPath)
-      if (!fileResult.success) throw new Error(`读取文件失败: ${fileResult.error}`)
+      // 根据文件大小选择读取策略
+      const LARGE_THRESHOLD = 100 * 1024 * 1024 // 100MB
+      const fileInfo = await window.electronAPI.getFileInfo(fullPath)
+      const fileSize = fileInfo.success && fileInfo.info ? fileInfo.info.size : 0
 
-      const fileText = fileResult.text || ''
-      let allLines = fileText.split('\n').filter((l: string) => l.trim())
+      let allLines: string[]
+      let fileEncoding = 'utf-8'
+      let fileTotalLines = 0
+
+      if (fileSize > LARGE_THRESHOLD) {
+        // ═══ 大文件：流式全量扫描 ═══
+        getStore().addLocalProgress(`[读取] 大文件模式 (${(fileSize / 1024 / 1024 / 1024).toFixed(2)} GB)，启动流式全量扫描...`)
+
+        // 注册进度监听
+        const removeProgress = window.electronAPI.onStreamProgress((data) => {
+          getStore().addLocalProgress(`[扫描] 已扫描 ${(data.linesScanned / 1000000).toFixed(1)}M 行，发现 ${data.matchesFound} 条告警...`)
+        })
+
+        // 获取内置规则 + 自定义规则
+        const { BUILT_IN_RULES: builtInRules } = await import('@/core/rule-engine')
+        const customRules = getCustomRules()
+        const allRules = [...builtInRules, ...customRules]
+        const ruleDefs = allRules.map(r => ({
+          id: r.id,
+          name: r.name,
+          category: r.category,
+          severity: r.severity,
+          patterns: r.patterns.map(p => p.toString()),
+          description: r.description,
+          remediation: r.remediation,
+        }))
+
+        getStore().setPreprocessStatus('analyzing')
+        const streamResult = await window.electronAPI.streamAnalyze(fullPath, ruleDefs)
+        removeProgress()
+
+        if (!streamResult.success) throw new Error(`流式扫描失败: ${streamResult.error}`)
+
+        fileTotalLines = streamResult.totalLines
+        fileEncoding = 'utf-8'
+
+        // 转换为 RuleAnalysisResult 格式
+        const ruleMap = new Map(builtInRules.map(r => [r.id, r]))
+
+        const ruleMatches: RuleMatch[] = streamResult.matches.map(m => ({
+          rule: ruleMap.get(m.ruleId) || allRules.find(r => r.id === m.ruleId) || {
+            id: m.ruleId, name: m.ruleName, category: m.category,
+            severity: m.severity as any, patterns: [], description: m.description, remediation: m.remediation,
+          },
+          line: m.line,
+          lineNumber: m.lineNumber,
+          matchedText: m.matchedText,
+        }))
+
+        const aggregatedAlerts = deduplicateMatches(ruleMatches)
+
+        const result: RuleAnalysisResult = {
+          totalLines: fileTotalLines,
+          matchedLines: streamResult.matchedLines,
+          matches: ruleMatches,
+          aggregatedAlerts,
+          summary: streamResult.summary,
+          categoryStats: streamResult.categoryStats,
+          report: generateStreamingReport(fileTotalLines, streamResult.matchedLines, streamResult.matches.length, streamResult.summary, streamResult.categoryStats, aggregatedAlerts),
+        }
+
+        const elapsed = useAnalysisStore.getState().localElapsedTime
+        await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
+
+        const suspiciousLines = result.matches.map(m => m.line)
+        const matchedCategories = [...new Set(result.matches.map(m => m.rule.category))]
+
+        getStore().setLocalReportText(result.report)
+        getStore().setLocalRuleResult(result)
+        getStore().setPreprocessResult({
+          totalLines: fileTotalLines,
+          suspiciousLines: suspiciousLines.length,
+          suspiciousContent: suspiciousLines,
+          matchedCategories,
+        })
+        getStore().setPreprocessStatus('done')
+
+        setActiveTab('local-report')
+
+        addRecord({
+          filePath: fullPath,
+          fileName: displayName || 'unknown',
+          fileSize: fileSize,
+          linesAnalyzed: fileTotalLines,
+          modelProvider: 'local',
+          modelName: '本地规则引擎（流式全量）',
+          analysisTime: elapsed,
+          hasReport: true,
+          reportText: result.report,
+          notes: '',
+        })
+
+        // 异步 GeoIP（从告警行提取 IP）
+        const ips = extractIPsFromLines(suspiciousLines)
+        if (ips.length > 0) {
+          lookupIPs(ips).then(geoResults => {
+            getStore().setGeoIPResults(geoResults)
+          }).catch(() => {})
+        }
+
+        const botStats = detectBots(suspiciousLines)
+        getStore().setBotStats(botStats)
+
+        return // 大文件分支到此结束
+
+      } else {
+        // ═══ 小文件：一次性读取 ═══
+        const fileResult = await window.electronAPI.readTextFile(fullPath)
+        if (!fileResult.success) throw new Error(`读取文件失败: ${fileResult.error}`)
+        const fileText = fileResult.text || ''
+        allLines = fileText.split('\n').filter((l: string) => l.trim())
+        fileEncoding = fileResult.encoding || 'utf-8'
+        fileTotalLines = allLines.length
+      }
 
       const preprocessCfg = useConfigStore.getState().config.preprocessConfig
       if (preprocessCfg?.enabled) {
@@ -133,9 +301,9 @@ export function AppLayout() {
 
       await showLocalAnalysisPhase2(progressStore, {
         format: formatType,
-        encoding: fileResult.encoding || 'utf-8',
-        sizeMB: ((fileResult.size || 0) / (1024 * 1024)).toFixed(2),
-        totalLines: allLines.length,
+        encoding: fileEncoding,
+        sizeMB: (fileSize / (1024 * 1024)).toFixed(2),
+        totalLines: fileTotalLines,
       }, getStatus)
 
       getStore().setPreprocessStatus('analyzing')
@@ -153,7 +321,7 @@ export function AppLayout() {
       getStore().setLocalReportText(result.report)
       getStore().setLocalRuleResult(result)
       getStore().setPreprocessResult({
-        totalLines: allLines.length,
+        totalLines: fileTotalLines,
         suspiciousLines: suspiciousLines.length,
         suspiciousContent: suspiciousLines,
         matchedCategories,
@@ -166,7 +334,7 @@ export function AppLayout() {
       addRecord({
         filePath: fullPath,
         fileName: displayName || 'unknown',
-        fileSize: (fileResult.size || 0),
+        fileSize: fileSize,
         linesAnalyzed: allLines.length,
         modelProvider: 'local',
         modelName: '本地预处理',

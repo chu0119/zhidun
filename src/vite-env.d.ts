@@ -11,6 +11,28 @@ interface ElectronAPI {
   saveFile: (options: any) => Promise<string | null>
   readFile: (filePath: string) => Promise<{ success: boolean; data?: string; size?: number; error?: string }>
   readTextFile: (filePath: string) => Promise<{ success: boolean; text?: string; encoding?: string; size?: number; error?: string }>
+  readLargeTextFile: (filePath: string, options?: { maxLines?: number; encoding?: string }) => Promise<{ success: boolean; lines?: string[]; totalLines?: number; encoding?: string; size?: number; sampledLines?: number; error?: string }>
+  countLines: (filePath: string) => Promise<{ success: boolean; totalLines?: number; error?: string }>
+  streamAnalyze: (filePath: string, rules: any[]) => Promise<{
+    success: boolean
+    totalLines: number
+    matchedLines: number
+    matches: Array<{
+      ruleId: string
+      ruleName: string
+      category: string
+      severity: string
+      lineNumber: number
+      line: string
+      matchedText: string
+      description: string
+      remediation: string
+    }>
+    summary: { critical: number; high: number; medium: number; low: number; info: number }
+    categoryStats: Record<string, number>
+    error?: string
+  }>
+  onStreamProgress: (callback: (data: { linesScanned: number; matchesFound: number }) => void) => () => void
   writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
   getFileInfo: (filePath: string) => Promise<{ success: boolean; info?: any; error?: string }>
   openExternal: (url: string) => void

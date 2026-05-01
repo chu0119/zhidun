@@ -12,7 +12,7 @@ export class WenxinProvider extends BaseAIProvider {
   constructor(config: AIModelConfig) {
     super({
       ...config,
-      baseUrl: config.baseUrl || 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat',
+      baseUrl: config.baseUrl || 'https://qianfan.baidubce.com/v2',
     })
   }
 
@@ -50,29 +50,33 @@ export class WenxinProvider extends BaseAIProvider {
         allMessages.push({ role: msg.role === 'system' ? 'user' : msg.role, content: msg.content })
       }
 
-      const model = this.config.modelName || 'ernie-bot-turbo'
+      const model = this.config.modelName || 'ernie-5.0'
       const response = await axios.post(
-        `${this.config.baseUrl}/${model}?access_token=${token}`,
+        `${this.config.baseUrl}/chat/completions`,
         {
+          model,
           messages: allMessages,
           temperature: this.config.temperature || 0.6,
-          max_output_tokens: this.config.maxTokens || 4096,
+          max_tokens: this.config.maxTokens || 4096,
         },
         {
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
           timeout: (this.config.timeout || 600) * 1000,
           signal,
         }
       )
 
-      const content = response.data?.result
-      if (!content) {
+      const choice = response.data?.choices?.[0]
+      if (!choice?.message?.content) {
         throw new AIProviderError('文心一言返回空响应')
       }
 
       return {
-        content,
-        model,
+        content: choice.message.content,
+        model: response.data?.model || model,
         usage: response.data?.usage ? {
           promptTokens: response.data.usage.prompt_tokens,
           completionTokens: response.data.usage.completion_tokens,
