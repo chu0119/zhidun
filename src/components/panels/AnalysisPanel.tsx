@@ -14,7 +14,7 @@ export function AnalysisPanel({ mode }: AnalysisPanelProps) {
   const status = useAnalysisStore(
     s => mode === 'ai' ? s.status : s.preprocessStatus
   )
-  const error = useAnalysisStore(s => mode === 'ai' ? s.error : null)
+  const error = useAnalysisStore(s => s.error)
   const thinkingContent = useAnalysisStore(s => mode === 'ai' ? s.thinkingContent : '')
   const bottomRef = useRef<HTMLDivElement>(null)
   const [showThinking, setShowThinking] = React.useState(false)
@@ -27,7 +27,7 @@ export function AnalysisPanel({ mode }: AnalysisPanelProps) {
     msg.includes('>>>') || msg.startsWith('[阶段') || msg.startsWith('---')
 
   return (
-    <div className="h-full flex flex-col" style={{ zoom: `var(--font-${mode === 'ai' ? 'analysis' : 'analysis'}-scale, 1)` }}>
+    <div className="h-full flex flex-col" style={{ zoom: 'var(--font-analysis-scale, 1)' }}>
       {/* AI 思考过程 (仅 AI 模式) */}
       {mode === 'ai' && thinkingContent && (
         <div className="mb-3">
@@ -111,7 +111,7 @@ export function AnalysisPanel({ mode }: AnalysisPanelProps) {
                   <div className="absolute inset-1 rounded-full bg-[var(--accent-primary)]" />
                 </div>
                 <span className="text-[var(--text-dim)]">
-                  {status === 'preparing' ? '正在准备...' : '等待 AI 响应...'}
+                  {status === 'preparing' ? '正在准备...' : mode === 'ai' ? '等待 AI 响应...' : '正在扫描规则...'}
                 </span>
               </div>
             )}

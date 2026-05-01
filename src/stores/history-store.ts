@@ -50,15 +50,12 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   },
 
   saveSnapshot: async (id: string, snapshot: AnalysisSnapshot) => {
-    try {
-      const appPath = await window.electronAPI.getAppPath()
-      const dirPath = `${appPath}/snapshots`
-      // 确保目录存在（通过写入文件自动创建）
-      const snapshotPath = `${dirPath}/${id}.json`
-      const data = JSON.stringify(snapshot)
-      await window.electronAPI.writeFile(snapshotPath, data)
-    } catch (error) {
-      console.error('保存快照失败:', error)
+    const appPath = await window.electronAPI.getAppPath()
+    const snapshotPath = `${appPath}/snapshots/${id}.json`
+    const data = JSON.stringify(snapshot)
+    const result = await window.electronAPI.writeFile(snapshotPath, data)
+    if (!result.success) {
+      throw new Error(result.error || '快照保存失败')
     }
   },
 
@@ -77,23 +74,41 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   },
 
   addRecord: async (record, snapshot) => {
+    let hasSnapshot = false
+    if (snapshot) {
+      try {
+        const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        await get().saveSnapshot(id, snapshot)
+        hasSnapshot = true
+        // 保存成功后才创建记录
+        const newRecord: AnalysisHistory = {
+          ...record,
+          id,
+          timestamp: new Date().toISOString(),
+          hasSnapshot: true,
+        }
+        set(state => {
+          const history = [newRecord, ...state.history].slice(0, MAX_HISTORY_RECORDS)
+          return { history }
+        })
+        get().saveHistory()
+        return newRecord
+      } catch (error) {
+        console.error('保存快照失败，仅保存历史索引:', error)
+      }
+    }
+
+    // 无快照或快照保存失败
     const newRecord: AnalysisHistory = {
       ...record,
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       timestamp: new Date().toISOString(),
-      hasSnapshot: !!snapshot,
+      hasSnapshot: false,
     }
-
-    // 如果有快照，先保存快照再更新历史（确保原子性）
-    if (snapshot) {
-      await get().saveSnapshot(newRecord.id, snapshot)
-    }
-
     set(state => {
       const history = [newRecord, ...state.history].slice(0, MAX_HISTORY_RECORDS)
       return { history }
     })
-
     get().saveHistory()
     return newRecord
   },

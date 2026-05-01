@@ -1,6 +1,6 @@
 // 告警历史对话框
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAlertHistoryStore } from '@/stores/alert-history-store'
 import type { AlertHistoryEntry } from '@/core/notification-engine'
 
@@ -33,6 +33,10 @@ export function AlertHistoryDialog({ open, onClose }: AlertHistoryDialogProps) {
   const { alerts, acknowledgeAlert, resolveAlert, deleteAlert, clearResolved } = useAlertHistoryStore()
   const [stateFilter, setStateFilter] = useState<string>('all')
   const [severityFilter, setSeverityFilter] = useState<string>('all')
+
+  useEffect(() => {
+    if (open) useAlertHistoryStore.getState().loadAlerts()
+  }, [open])
 
   if (!open) return null
 

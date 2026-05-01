@@ -168,9 +168,9 @@ async function computeHmacSign(secret: string, timestamp: number): Promise<strin
   const stringToSign = `${timestamp}\n${secret}`
   const encoder = new TextEncoder()
   const key = await crypto.subtle.importKey(
-    'raw', encoder.encode(stringToSign), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+    'raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
   )
-  const signature = await crypto.subtle.sign('HMAC', key, new Uint8Array(0))
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(stringToSign))
   return btoa(String.fromCharCode(...new Uint8Array(signature)))
 }
 

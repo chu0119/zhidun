@@ -270,6 +270,8 @@ export function AppLayout() {
     setActiveTab('local-analysis')
     getStore().setPreprocessStatus('preparing')
     getStore().startLocalTimer()
+    // 清除上次分析的 GeoIP 结果，避免切换文件后显示旧数据
+    getStore().setGeoIPResults(null)
 
     const s = useAnalysisStore.getState()
     const progressStore = { addProgress: (msg: string) => s.addLocalProgress(msg) }
@@ -450,6 +452,9 @@ export function AppLayout() {
         ips = extractIPsFromLines(suspiciousLines)
       }
 
+      // 检查是否已被停止
+      if (useAnalysisStore.getState().preprocessStatus === 'stopped') return
+
       const elapsed = useAnalysisStore.getState().localElapsedTime
       await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
 
@@ -555,7 +560,7 @@ export function AppLayout() {
           `[本地规则分析结果]`,
           `- 扫描总行数: ${totalLines}`,
           `- 命中规则行数: ${matchedLines}`,
-          `- 命中率: ${((matchedLines / totalLines) * 100).toFixed(2)}%`,
+          `- 命中率: ${totalLines > 0 ? ((matchedLines / totalLines) * 100).toFixed(2) : '0.00'}%`,
           `- 风险分布: 严重 ${summary.critical}, 高危 ${summary.high}, 中危 ${summary.medium}, 低危 ${summary.low}, 信息 ${summary.info}`,
           `- 攻击类别统计: ${Object.entries(categoryStats).map(([k, v]) => `${k}(${v})`).join(', ')}`,
           ``,
@@ -750,6 +755,11 @@ export function AppLayout() {
     if (preprocessStatus === 'preparing' || preprocessStatus === 'analyzing') {
       getStore().setPreprocessStatus('stopped')
       getStore().stopLocalTimer()
+      // 终止 Worker
+      if (analysisWorker) {
+        analysisWorker.terminate()
+        analysisWorker = null
+      }
     }
   }, [])
 
