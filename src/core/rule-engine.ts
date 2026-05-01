@@ -7,7 +7,7 @@ export interface Rule {
   id: string
   name: string
   category: string
-  severity: 'critical' | 'high' | 'medium' | 'low'
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
   patterns: RegExp[]
   description: string
   remediation: string
@@ -37,6 +37,7 @@ export interface RuleAnalysisResult {
     high: number
     medium: number
     low: number
+    info: number
   }
   categoryStats: Record<string, number>
   report: string
@@ -1308,9 +1309,9 @@ export const BUILT_IN_RULES: Rule[] = [
   {
     id: 'BRUTE-003', name: '登录爆破特征', category: '暴力破解', severity: 'high',
     patterns: [
-      /\/(login|signin|auth|admin).*\b(POST|GET)\b/i,    // login endpoint
-      /\b(username|user|email)\s*=\s*\w{1,5}\b/i,        // short username
-      /\b(password|pass|pwd)\s*=\s*\w{1,8}\b/i,          // short password
+      /\/(login|signin|auth)[^\s]*\s+(POST|GET)\s+\S+\s+\d*\s*40[13]\b/i,  // login + 401/403
+      /\b(username|user|email)\s*=\s*['"]?\w{1,5}['"]?[\s;,&]/i,           // short username
+      /\b(password|pass|pwd)\s*=\s*['"]?\w{1,8}['"]?[\s;,&]/i,             // short password
     ],
     description: '检测到登录爆破特征',
     remediation: '实施账户锁定、验证码、IP 限流'
@@ -1801,7 +1802,7 @@ export function deduplicateMatches(matches: RuleMatch[]): AggregatedAlert[] {
 export function analyzeWithRules(lines: string[], progressCallback?: (msg: string) => void, customRules?: Rule[]): RuleAnalysisResult {
   const matches: RuleMatch[] = []
   const categoryStats: Record<string, number> = {}
-  const summary = { critical: 0, high: 0, medium: 0, low: 0 }
+  const summary = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
 
   const allRules = customRules ? [...BUILT_IN_RULES, ...customRules] : BUILT_IN_RULES
 
@@ -1811,11 +1812,12 @@ export function analyzeWithRules(lines: string[], progressCallback?: (msg: strin
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (!line.trim()) continue
+    const matchLine = line.length > 4096 ? line.substring(0, 4096) : line
 
     for (const rule of allRules) {
       for (const pattern of rule.patterns) {
         pattern.lastIndex = 0
-        const match = pattern.exec(line)
+        const match = pattern.exec(matchLine)
         if (match) {
           matches.push({
             rule,
@@ -1857,12 +1859,12 @@ export function analyzeWithRules(lines: string[], progressCallback?: (msg: strin
 function generateRuleReport(
   lines: string[],
   matches: RuleMatch[],
-  summary: { critical: number; high: number; medium: number; low: number },
+  summary: { critical: number; high: number; medium: number; low: number; info: number },
   categoryStats: Record<string, number>,
   aggregatedAlerts: AggregatedAlert[]
 ): string {
   const now = new Date().toLocaleString()
-  const totalThreats = summary.critical + summary.high + summary.medium + summary.low
+  const totalThreats = summary.critical + summary.high + summary.medium + summary.low + summary.info
 
   let report = `【安全分析报告 - 本地规则引擎】\n\n`
   report += `1. 事件概述\n`
@@ -1916,6 +1918,7 @@ function generateRuleReport(
   report += `   • 高危: ${summary.high}\n`
   report += `   • 中危: ${summary.medium}\n`
   report += `   • 低危: ${summary.low}\n`
+  report += `   • 信息: ${summary.info}\n`
 
   let riskLevel = '低危'
   if (summary.critical > 0) riskLevel = '危急'

@@ -4,8 +4,19 @@ const path = require('path')
 const { execSync } = require('child_process')
 
 const ROOT = path.resolve(__dirname, '..')
-const OUT_DIR = path.join(ROOT, 'release', 'win-unpacked')
 const ELECTRON_DIST = path.join(ROOT, 'node_modules', 'electron', 'dist')
+
+// 根据平台确定构建目标和输出目录
+const PLATFORM = process.platform
+const IS_WIN = PLATFORM === 'win32'
+const IS_MAC = PLATFORM === 'darwin'
+const IS_LINUX = PLATFORM === 'linux'
+
+const OUT_DIR = path.join(ROOT, 'release', IS_WIN ? 'win-unpacked' : IS_MAC ? 'mac' : 'linux-unpacked')
+const EXE_NAME = IS_WIN ? 'zhidun.exe' : IS_MAC ? 'zhidun' : 'zhidun'
+const ELECTRON_EXE = IS_WIN ? 'electron.exe' : 'electron'
+
+const BUILD_TARGET = IS_WIN ? '--win' : IS_MAC ? '--mac' : '--linux'
 
 function copyRecursive(src, dst) {
   const stat = fs.statSync(src)
@@ -20,6 +31,7 @@ function copyRecursive(src, dst) {
 }
 
 console.log('=== 星川智盾 构建脚本 ===\n')
+console.log(`平台: ${PLATFORM} (${BUILD_TARGET})\n`)
 
 // Step 1: TypeScript check
 console.log('[1/4] TypeScript 类型检查...')
@@ -36,17 +48,22 @@ console.log('[3/4] 打包 Electron 应用...')
 fs.rmSync(path.join(ROOT, 'release'), { recursive: true, force: true })
 fs.mkdirSync(OUT_DIR, { recursive: true })
 fs.mkdirSync(path.join(OUT_DIR, 'resources'), { recursive: true })
-fs.mkdirSync(path.join(OUT_DIR, 'locales'), { recursive: true })
+
+if (IS_WIN) {
+  fs.mkdirSync(path.join(OUT_DIR, 'locales'), { recursive: true })
+}
 
 // Copy electron dist
 for (const f of fs.readdirSync(ELECTRON_DIST)) {
   copyRecursive(path.join(ELECTRON_DIST, f), path.join(OUT_DIR, f))
 }
 
-// Rename electron.exe
-const exeSrc = path.join(OUT_DIR, 'electron.exe')
-const exeDst = path.join(OUT_DIR, 'zhidun.exe')
-fs.renameSync(exeSrc, exeDst)
+// Rename electron executable
+const exeSrc = path.join(OUT_DIR, ELECTRON_EXE)
+const exeDst = path.join(OUT_DIR, EXE_NAME)
+if (fs.existsSync(exeSrc)) {
+  fs.renameSync(exeSrc, exeDst)
+}
 
 // Copy app files
 copyRecursive(path.join(ROOT, 'dist'), path.join(OUT_DIR, 'resources', 'app', 'dist'))
@@ -72,12 +89,13 @@ console.log('  ✓ 完成\n')
 
 // Step 4: Create installer
 console.log('[4/4] 创建安装程序...')
-execSync('npx electron-builder --win --prepackaged release/win-unpacked', { cwd: ROOT, stdio: 'inherit' })
+execSync(`npx electron-builder ${BUILD_TARGET} --prepackaged release/${IS_WIN ? 'win-unpacked' : IS_MAC ? 'mac' : 'linux-unpacked'}`, { cwd: ROOT, stdio: 'inherit' })
 console.log('  ✓ 完成\n')
 
 // List output
 const releaseDir = path.join(ROOT, 'release')
-const files = fs.readdirSync(releaseDir).filter(f => f.endsWith('.exe'))
+const extFilter = IS_WIN ? '.exe' : IS_MAC ? '.dmg' : '.AppImage'
+const files = fs.readdirSync(releaseDir).filter(f => f.endsWith(extFilter))
 console.log('=== 构建完成 ===')
 for (const f of files) {
   const size = fs.statSync(path.join(releaseDir, f)).size

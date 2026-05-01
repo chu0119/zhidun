@@ -1,7 +1,7 @@
 // 历史记录状态管理
 
 import { create } from 'zustand'
-import type { AnalysisHistory } from '@/types/analysis'
+import type { AnalysisHistory, AnalysisSnapshot } from '@/types/analysis'
 import { MAX_HISTORY_RECORDS } from '@/core/constants'
 
 interface HistoryState {
@@ -9,10 +9,12 @@ interface HistoryState {
   loaded: boolean
   loadHistory: () => Promise<void>
   saveHistory: () => Promise<void>
-  addRecord: (record: Omit<AnalysisHistory, 'id' | 'timestamp'>) => Promise<AnalysisHistory>
+  addRecord: (record: Omit<AnalysisHistory, 'id' | 'timestamp'>, snapshot?: AnalysisSnapshot) => Promise<AnalysisHistory>
   deleteRecord: (id: string) => void
   clearAll: () => void
   searchHistory: (keyword?: string, provider?: string) => AnalysisHistory[]
+  saveSnapshot: (id: string, snapshot: AnalysisSnapshot) => Promise<void>
+  loadSnapshot: (id: string) => Promise<AnalysisSnapshot | null>
 }
 
 export const useHistoryStore = create<HistoryState>((set, get) => ({
@@ -47,11 +49,44 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
     }
   },
 
-  addRecord: async (record) => {
+  saveSnapshot: async (id: string, snapshot: AnalysisSnapshot) => {
+    try {
+      const appPath = await window.electronAPI.getAppPath()
+      const dirPath = `${appPath}/snapshots`
+      // 确保目录存在（通过写入文件自动创建）
+      const snapshotPath = `${dirPath}/${id}.json`
+      const data = JSON.stringify(snapshot)
+      await window.electronAPI.writeFile(snapshotPath, data)
+    } catch (error) {
+      console.error('保存快照失败:', error)
+    }
+  },
+
+  loadSnapshot: async (id: string) => {
+    try {
+      const appPath = await window.electronAPI.getAppPath()
+      const snapshotPath = `${appPath}/snapshots/${id}.json`
+      const result = await window.electronAPI.readTextFile(snapshotPath)
+      if (result.success && result.text) {
+        return JSON.parse(result.text) as AnalysisSnapshot
+      }
+    } catch (error) {
+      console.error('加载快照失败:', error)
+    }
+    return null
+  },
+
+  addRecord: async (record, snapshot) => {
     const newRecord: AnalysisHistory = {
       ...record,
-      id: Date.now().toString(),
-      timestamp: new Date().toLocaleString(),
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      timestamp: new Date().toISOString(),
+      hasSnapshot: !!snapshot,
+    }
+
+    // 如果有快照，先保存快照再更新历史（确保原子性）
+    if (snapshot) {
+      await get().saveSnapshot(newRecord.id, snapshot)
     }
 
     set(state => {
@@ -68,6 +103,10 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       history: state.history.filter(r => r.id !== id),
     }))
     get().saveHistory()
+    // 异步删除快照文件（不阻塞 UI）
+    window.electronAPI.getAppPath().then(appPath => {
+      window.electronAPI.deleteFile?.(`${appPath}/snapshots/${id}.json`).catch(() => {})
+    }).catch(() => {})
   },
 
   clearAll: () => {

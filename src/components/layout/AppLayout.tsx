@@ -12,6 +12,7 @@ import { GeoPanel } from '../panels/GeoPanel'
 import { ThreatPanel } from '../panels/ThreatPanel'
 import { AttackPanel } from '../panels/AttackPanel'
 import { AttackSessionPanel } from '../panels/AttackSessionPanel'
+import { RealtimePanel } from '../panels/RealtimePanel'
 import { SettingsDialog } from '../dialogs/SettingsDialog'
 import { HistoryDialog } from '../dialogs/HistoryDialog'
 import { UpdateDialog } from '../dialogs/UpdateDialog'
@@ -28,10 +29,13 @@ import { LogAnalyzer, estimateTokens } from '@/core/analyzer'
 import { LogParser } from '@/core/log-parser'
 import { compressLogForAI, smartSample } from '@/core/log-processor'
 import { exportToDocx, exportToPdf } from '@/core/report-generator'
-import { analyzeWithRules, deduplicateMatches } from '@/core/rule-engine'
+import { deduplicateMatches } from '@/core/rule-engine'
 import type { RuleMatch, RuleAnalysisResult } from '@/core/rule-engine'
 import { extractIPsFromLines, lookupIPs } from '@/core/geoip'
 import { detectBots } from '@/core/bot-detector'
+
+// Worker 引用（用于取消）
+let analysisWorker: Worker | null = null
 import { useQueueStore, QueueItem } from '@/stores/queue-store'
 import { useRulesStore } from '@/stores/rules-store'
 import type { Rule } from '@/core/rule-engine'
@@ -39,8 +43,49 @@ import {
   showPhase1, showPhase2, showPhase3Pre, showPhase3Post, showPhase4,
   showLocalAnalysisPhase1, showLocalAnalysisPhase2, showLocalAnalysisPhase3, showLocalAnalysisPhase4,
 } from '@/core/demo-messages'
+import { useAlertHistoryStore } from '@/stores/alert-history-store'
+import { AlertHistoryDialog } from '@/components/dialogs/AlertHistoryDialog'
+import { initSoundListener } from '@/utils/audio'
+import type { AnalysisSnapshot } from '@/types/analysis'
+import type { GeoIPResult } from '@/core/geoip'
 
-type TabKey = 'ai-analysis' | 'ai-report' | 'local-analysis' | 'local-report' | 'threat' | 'attack' | 'session' | 'charts' | 'path' | 'geo'
+type TabKey = 'ai-analysis' | 'ai-report' | 'local-analysis' | 'local-report' | 'threat' | 'attack' | 'session' | 'charts' | 'path' | 'geo' | 'realtime'
+
+// 构建分析快照（用于保存到历史记录）
+function buildSnapshot(store: ReturnType<typeof useAnalysisStore.getState>, geoResults: Map<string, GeoIPResult> | null): AnalysisSnapshot {
+  const ruleResult = store.localRuleResult
+  return {
+    localRuleResult: ruleResult ? {
+      totalLines: ruleResult.totalLines,
+      matchedLines: ruleResult.matchedLines,
+      matches: ruleResult.matches.map(m => ({
+        rule: { id: m.rule.id, name: m.rule.name, category: m.rule.category, severity: m.rule.severity, description: m.rule.description, remediation: m.rule.remediation, mitre: m.rule.mitre, cwe: m.rule.cwe },
+        line: m.line,
+        lineNumber: m.lineNumber,
+        matchedText: m.matchedText,
+      })),
+      aggregatedAlerts: ruleResult.aggregatedAlerts.map(a => ({
+        rule: { id: a.rule.id, name: a.rule.name, category: a.rule.category, severity: a.rule.severity, description: a.rule.description, remediation: a.rule.remediation, mitre: a.rule.mitre, cwe: a.rule.cwe },
+        sourceIP: a.sourceIP,
+        count: a.count,
+        lineNumbers: a.lineNumbers,
+        firstSeen: a.firstSeen,
+        lastSeen: a.lastSeen,
+        sampleLine: a.sampleLine,
+      })),
+      summary: ruleResult.summary,
+      categoryStats: ruleResult.categoryStats,
+      report: ruleResult.report,
+    } : null,
+    localReportText: store.localReportText,
+    aiReportText: store.reportText,
+    botStats: (store.botStats || []).map(b => ({ category: b.category, name: b.name, count: b.count, sampleUA: b.sampleUA })),
+    geoIPResults: geoResults ? Object.fromEntries(geoResults) : {},
+    preprocessResult: store.preprocessResult,
+    logLines: store.logLines,
+    savedAt: new Date().toISOString(),
+  }
+}
 
 // 流式扫描报告生成（大文件专用）
 function generateStreamingReport(
@@ -52,7 +97,7 @@ function generateStreamingReport(
   aggregatedAlerts: any[]
 ): string {
   const now = new Date().toLocaleString('zh-CN')
-  const totalThreats = summary.critical + summary.high + summary.medium + summary.low
+  const totalThreats = summary.critical + summary.high + summary.medium + summary.low + summary.info
 
   let report = `【安全分析报告 - 本地规则引擎】\n\n`
   report += `1. 事件概述\n`
@@ -95,6 +140,64 @@ function generateStreamingReport(
   return report
 }
 
+// 在 Worker 中运行规则引擎分析（避免阻塞渲染线程）
+function runAnalysisInWorker(
+  lines: string[],
+  rules: Rule[],
+  onProgress: (msg: string) => void,
+): { promise: Promise<{ result: RuleAnalysisResult; botStats: import('@/core/bot-detector').BotStat[]; ips: string[] }>; cancel: () => void } {
+  // 终止之前的 Worker
+  if (analysisWorker) {
+    analysisWorker.terminate()
+    analysisWorker = null
+  }
+
+  const worker = new Worker(new URL('../../workers/analysis.worker.ts', import.meta.url), { type: 'module' })
+  analysisWorker = worker
+
+  // 序列化规则（RegExp → {source, flags}）
+  const serializableRules = rules.map(r => ({
+    ...r,
+    patterns: r.patterns.map(p => ({ source: p.source, flags: p.flags })),
+  }))
+
+  const promise = new Promise<{ result: RuleAnalysisResult; botStats: import('@/core/bot-detector').BotStat[]; ips: string[] }>((resolve, reject) => {
+    worker.onmessage = (e) => {
+      const data = e.data
+      if (data.type === 'progress') {
+        onProgress(data.message)
+      } else if (data.type === 'result') {
+        worker.terminate()
+        analysisWorker = null
+        resolve({ result: data.result, botStats: data.botStats, ips: data.ips })
+      } else if (data.type === 'error') {
+        worker.terminate()
+        analysisWorker = null
+        reject(new Error(data.error))
+      }
+    }
+
+    worker.onerror = (err) => {
+      worker.terminate()
+      analysisWorker = null
+      reject(new Error(err.message || 'Worker 错误'))
+    }
+
+    worker.postMessage({ type: 'analyze', lines, rules: serializableRules })
+  })
+
+  return {
+    promise,
+    cancel: () => {
+      worker.postMessage({ type: 'cancel' })
+      setTimeout(() => {
+        worker.terminate()
+        analysisWorker = null
+      }, 100)
+    },
+  }
+}
+
 export function AppLayout() {
   const [activeTab, setActiveTab] = useState<TabKey>('local-analysis')
   const [showSettings, setShowSettings] = useState(false)
@@ -102,6 +205,7 @@ export function AppLayout() {
   const [showUpdate, setShowUpdate] = useState(false)
   const [showPreprocess, setShowPreprocess] = useState(false)
   const [showNotification, setShowNotification] = useState(false)
+  const [showAlertHistory, setShowAlertHistory] = useState(false)
   const [isDraggingFile, setIsDraggingFile] = useState(false)
   const dragCounterRef = React.useRef(0)
 
@@ -109,6 +213,7 @@ export function AppLayout() {
   const { addRecord } = useHistoryStore()
   const status = useAnalysisStore(s => s.status)
   const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
+  const unacknowledgedCount = useAlertHistoryStore(s => s.alerts.filter(a => a.state === 'new').length)
 
   // 稳定的 store 访问（避免在 useCallback 依赖中使用 store 对象）
   const getStore = useAnalysisStore.getState
@@ -123,6 +228,12 @@ export function AppLayout() {
   useEffect(() => {
     const { loadHistory } = useHistoryStore.getState()
     loadHistory()
+  }, [])
+
+  // 加载告警历史 & 初始化音效监听
+  useEffect(() => {
+    useAlertHistoryStore.getState().loadAlerts()
+    initSoundListener()
   }, [])
 
   // 转换自定义规则为规则引擎格式
@@ -200,8 +311,12 @@ export function AppLayout() {
         }))
 
         getStore().setPreprocessStatus('analyzing')
-        const streamResult = await window.electronAPI.streamAnalyze(fullPath, ruleDefs)
-        removeProgress()
+        let streamResult: any
+        try {
+          streamResult = await window.electronAPI.streamAnalyze(fullPath, ruleDefs)
+        } finally {
+          removeProgress()
+        }
 
         if (!streamResult.success) throw new Error(`流式扫描失败: ${streamResult.error}`)
 
@@ -211,7 +326,7 @@ export function AppLayout() {
         // 转换为 RuleAnalysisResult 格式
         const ruleMap = new Map(builtInRules.map(r => [r.id, r]))
 
-        const ruleMatches: RuleMatch[] = streamResult.matches.map(m => ({
+        const ruleMatches: RuleMatch[] = streamResult.matches.map((m: any) => ({
           rule: ruleMap.get(m.ruleId) || allRules.find(r => r.id === m.ruleId) || {
             id: m.ruleId, name: m.ruleName, category: m.category,
             severity: m.severity as any, patterns: [], description: m.description, remediation: m.remediation,
@@ -251,29 +366,28 @@ export function AppLayout() {
 
         setActiveTab('local-report')
 
-        addRecord({
-          filePath: fullPath,
-          fileName: displayName || 'unknown',
-          fileSize: fileSize,
-          linesAnalyzed: fileTotalLines,
-          modelProvider: 'local',
-          modelName: '本地规则引擎（流式全量）',
-          analysisTime: elapsed,
-          hasReport: true,
-          reportText: result.report,
-          notes: '',
-        })
-
-        // 异步 GeoIP（从告警行提取 IP）
-        const ips = extractIPsFromLines(suspiciousLines)
-        if (ips.length > 0) {
-          lookupIPs(ips).then(geoResults => {
-            getStore().setGeoIPResults(geoResults)
-          }).catch(() => {})
-        }
-
         const botStats = detectBots(suspiciousLines)
         getStore().setBotStats(botStats)
+
+        // GeoIP 查询完成后保存快照
+        const ips = extractIPsFromLines(suspiciousLines)
+        const geoPromise = ips.length > 0 ? lookupIPs(ips).catch(() => null) : Promise.resolve(null)
+        geoPromise.then(geoResults => {
+          if (geoResults) getStore().setGeoIPResults(geoResults)
+          const snapshot = buildSnapshot(getStore(), geoResults)
+          addRecord({
+            filePath: fullPath,
+            fileName: displayName || 'unknown',
+            fileSize: fileSize,
+            linesAnalyzed: fileTotalLines,
+            modelProvider: 'local',
+            modelName: '本地规则引擎（流式全量）',
+            analysisTime: elapsed,
+            hasReport: true,
+            reportText: result.report,
+            notes: '',
+          }, snapshot)
+        })
 
         return // 大文件分支到此结束
 
@@ -309,7 +423,13 @@ export function AppLayout() {
       getStore().setPreprocessStatus('analyzing')
       await showLocalAnalysisPhase3(progressStore, allLines.length, getStatus)
 
-      const result = analyzeWithRules(allLines, (msg) => getStore().addLocalProgress(msg), getCustomRules())
+      // 在 Worker 中运行规则引擎（不阻塞 UI）
+      const { promise: workerPromise } = runAnalysisInWorker(
+        allLines,
+        getCustomRules(),
+        (msg) => getStore().addLocalProgress(msg),
+      )
+      const { result, botStats, ips } = await workerPromise
 
       const elapsed = useAnalysisStore.getState().localElapsedTime
       await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
@@ -330,30 +450,26 @@ export function AppLayout() {
 
       setActiveTab('local-report')
 
-      // 保存历史记录
-      addRecord({
-        filePath: fullPath,
-        fileName: displayName || 'unknown',
-        fileSize: fileSize,
-        linesAnalyzed: allLines.length,
-        modelProvider: 'local',
-        modelName: '本地预处理',
-        analysisTime: elapsed,
-        hasReport: true,
-        reportText: result.report,
-        notes: '',
-      })
-
-      // 异步 GeoIP 查询
-      const ips = extractIPsFromLines(allLines)
-      if (ips.length > 0) {
-        lookupIPs(ips).then(geoResults => {
-          getStore().setGeoIPResults(geoResults)
-        }).catch(() => {})
-      }
-
-      const botStats = detectBots(allLines)
       getStore().setBotStats(botStats)
+
+      // GeoIP 查询完成后保存快照
+      const geoPromise = ips.length > 0 ? lookupIPs(ips).catch(() => null) : Promise.resolve(null)
+      geoPromise.then(geoResults => {
+        if (geoResults) getStore().setGeoIPResults(geoResults)
+        const snapshot = buildSnapshot(getStore(), geoResults)
+        addRecord({
+          filePath: fullPath,
+          fileName: displayName || 'unknown',
+          fileSize: fileSize,
+          linesAnalyzed: allLines.length,
+          modelProvider: 'local',
+          modelName: '本地预处理',
+          analysisTime: elapsed,
+          hasReport: true,
+          reportText: result.report,
+          notes: '',
+        }, snapshot)
+      })
 
       // 异步告警通知
       const notifConfig = useConfigStore.getState().config.notificationConfig
@@ -421,7 +537,7 @@ export function AppLayout() {
           `- 扫描总行数: ${totalLines}`,
           `- 命中规则行数: ${matchedLines}`,
           `- 命中率: ${((matchedLines / totalLines) * 100).toFixed(2)}%`,
-          `- 风险分布: 严重 ${summary.critical}, 高危 ${summary.high}, 中危 ${summary.medium}, 低危 ${summary.low}`,
+          `- 风险分布: 严重 ${summary.critical}, 高危 ${summary.high}, 中危 ${summary.medium}, 低危 ${summary.low}, 信息 ${summary.info}`,
           `- 攻击类别统计: ${Object.entries(categoryStats).map(([k, v]) => `${k}(${v})`).join(', ')}`,
           ``,
           `[Top 威胁 IP 聚合]`,
@@ -554,6 +670,11 @@ export function AppLayout() {
 
         setActiveTab('ai-report')
 
+        // AI 分析快照（保存当前所有本地分析数据 + AI 报告）
+        const aiSnapshot: AnalysisSnapshot = {
+          ...buildSnapshot(getStore(), getStore().geoIPResults),
+          aiReportText: report,
+        }
         addRecord({
           filePath: fullPath,
           fileName: displayName || 'unknown',
@@ -565,7 +686,7 @@ export function AppLayout() {
           hasReport: true,
           reportText: report,
           notes: '',
-        })
+        }, aiSnapshot)
       } else {
         progressStore.addProgress('')
         progressStore.addProgress('[错误] AI 未返回有效分析结果')
@@ -651,7 +772,8 @@ export function AppLayout() {
 
         useQueueStore.getState().updateItem(item.id, { progress: `正在分析 ${allLines.length} 行...` })
 
-        const result = analyzeWithRules(allLines, undefined, getCustomRules())
+        const { promise } = runAnalysisInWorker(allLines, getCustomRules(), () => {})
+        const { result } = await promise
         useQueueStore.getState().markDone(item.id, result, result.report)
       } catch (error: any) {
         useQueueStore.getState().markError(item.id, error.message)
@@ -819,6 +941,7 @@ export function AppLayout() {
     { key: 'charts', label: '可视化图表' },
     { key: 'path', label: '路径分析' },
     { key: 'geo', label: '地理分析' },
+    { key: 'realtime', label: '实时监控' },
   ]
 
   const titleBarButtons = (
@@ -826,6 +949,19 @@ export function AppLayout() {
       <button onClick={() => setShowHistory(true)}
         className="px-3 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors rounded hover:bg-white/5">
         历史
+      </button>
+      <button onClick={() => setShowAlertHistory(true)}
+        className="px-3 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors rounded hover:bg-white/5 relative">
+        告警
+        {unacknowledgedCount > 0 && (
+          <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
+            {unacknowledgedCount > 99 ? '99+' : unacknowledgedCount}
+          </span>
+        )}
+      </button>
+      <button onClick={() => setShowNotification(true)}
+        className="px-3 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors rounded hover:bg-white/5">
+        通知
       </button>
       <button onClick={() => setShowSettings(true)}
         className="px-3 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors rounded hover:bg-white/5">
@@ -867,24 +1003,26 @@ export function AppLayout() {
           </div>
 
           {/* 标签页内容 */}
-          <div className="flex-1 overflow-hidden p-4 min-h-0 animate-slide-up-fade" key={activeTab}>
-            {activeTab === 'ai-analysis' && <AnalysisPanel mode="ai" />}
-            {activeTab === 'ai-report' && <ReportPanel mode="ai" />}
-            {activeTab === 'local-analysis' && <AnalysisPanel mode="local" />}
-            {activeTab === 'local-report' && <ReportPanel mode="local" />}
-            {activeTab === 'threat' && <ThreatPanel />}
-            {activeTab === 'attack' && <AttackPanel />}
-            {activeTab === 'session' && <AttackSessionPanel />}
-            {activeTab === 'charts' && <ChartsPanel />}
-            {activeTab === 'path' && <PathAnalysisPanel />}
-            {activeTab === 'geo' && <GeoPanel />}
+          <div className="flex-1 overflow-hidden p-4 min-h-0 animate-slide-up-fade">
+            <div style={{ display: activeTab === 'ai-analysis' ? 'contents' : 'none' }}><AnalysisPanel mode="ai" /></div>
+            <div style={{ display: activeTab === 'ai-report' ? 'contents' : 'none' }}><ReportPanel mode="ai" /></div>
+            <div style={{ display: activeTab === 'local-analysis' ? 'contents' : 'none' }}><AnalysisPanel mode="local" /></div>
+            <div style={{ display: activeTab === 'local-report' ? 'contents' : 'none' }}><ReportPanel mode="local" /></div>
+            <div style={{ display: activeTab === 'threat' ? 'contents' : 'none' }}><ThreatPanel /></div>
+            <div style={{ display: activeTab === 'attack' ? 'contents' : 'none' }}><AttackPanel /></div>
+            <div style={{ display: activeTab === 'session' ? 'contents' : 'none' }}><AttackSessionPanel /></div>
+            <div style={{ display: activeTab === 'charts' ? 'contents' : 'none' }}><ChartsPanel /></div>
+            <div style={{ display: activeTab === 'path' ? 'contents' : 'none' }}><PathAnalysisPanel /></div>
+            <div style={{ display: activeTab === 'geo' ? 'contents' : 'none' }}><GeoPanel /></div>
+            <div style={{ display: activeTab === 'realtime' ? 'contents' : 'none' }}><RealtimePanel /></div>
           </div>
         </div>
       </div>
 
       <StatusBar />
       <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
-      <HistoryDialog open={showHistory} onClose={() => setShowHistory(false)} />
+      <HistoryDialog open={showHistory} onClose={() => setShowHistory(false)}
+        onViewReport={() => setActiveTab('ai-report')} />
       <UpdateDialog open={showUpdate} onClose={() => setShowUpdate(false)} />
       <PreprocessDialog
         open={showPreprocess}
@@ -898,6 +1036,7 @@ export function AppLayout() {
         config={config.notificationConfig || getDefaultNotificationConfig()}
         onSave={(cfg) => updateConfig({ notificationConfig: cfg })}
       />
+      <AlertHistoryDialog open={showAlertHistory} onClose={() => setShowAlertHistory(false)} />
 
       {/* 全局拖放覆盖层 */}
       {isDraggingFile && (

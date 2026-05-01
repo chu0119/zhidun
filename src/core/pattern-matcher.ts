@@ -15,10 +15,10 @@ const ATTACK_PATTERNS: Record<string, RegExp[]> = {
   命令注入: [
     /(;\s*cat\s+\/|;\s*ls\s+-la|;\s*whoami|;\s*pwd|;\s*id\s*;)/i,
     /(pipeline\s*get|powershell\s*-|cmd\.exe|\/bin\/sh|\/bin\/bash)/i,
-    /(\|s*cat\s*\|&&\s*rm\s*-rf|`.*\$\(.*\)`)/i,
+    /(\|\s*cat\s*\|&&\s*rm\s*-rf|`.*\$\(.*\)`)/i,
   ],
   目录遍历: [
-    /(\.\.\/\.\.\/|\.\.\\ \.\.\\|%2e%2e%2f|%252e%252e%252f)/i,
+    /(\.\.\/\.\.\/|\.\.\\\.\.\\|%2e%2e%2f|%252e%252e%252f)/i,
     /(\.\.[\\\/]|\.\.%2f|\.\.%5c|\/etc\/passwd|\/windows\/system32)/i,
   ],
   暴力破解: [

@@ -22,6 +22,7 @@ interface QueueState {
   isRunning: boolean
   mode: 'serial' | 'parallel'
   currentIndex: number
+  nextId: number
 
   // 操作
   addItems: (items: Omit<QueueItem, 'id' | 'status' | 'progress'>[]) => void
@@ -37,22 +38,22 @@ interface QueueState {
   getStats: () => { total: number; done: number; error: number; pending: number; analyzing: number }
 }
 
-let nextId = 1
-
 export const useQueueStore = create<QueueState>((set, get) => ({
   items: [],
   isRunning: false,
   mode: 'serial',
   currentIndex: 0,
+  nextId: 1,
 
   addItems: (newItems) => {
-    const items = newItems.map(item => ({
+    const { nextId } = get()
+    const items = newItems.map((item, i) => ({
       ...item,
-      id: `q-${nextId++}`,
+      id: `q-${nextId + i}`,
       status: 'pending' as const,
       progress: '等待中',
     }))
-    set(state => ({ items: [...state.items, ...items] }))
+    set(state => ({ items: [...state.items, ...items], nextId: state.nextId + newItems.length }))
   },
 
   removeItem: (id) => {

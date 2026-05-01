@@ -3,6 +3,9 @@
 import { create } from 'zustand'
 import type { AppConfig, ModelConfig } from '@/types/config'
 import { DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS, DEFAULT_API_ENDPOINTS, DEFAULT_MODEL_NAMES } from '@/core/constants'
+import { encryptApiKey, decryptApiKey } from '@/utils/encryption'
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
 
 interface ConfigState {
   config: AppConfig
@@ -26,7 +29,6 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   defaultLines: 1000,
   autoSave: true,
-  theme: 'cyber',
   cyberTheme: 'cyber',
   fontSize: 13,
   fontSizes: {
@@ -60,11 +62,25 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           if (loaded.fontSizes) {
             loaded.fontSizes = { ...DEFAULT_CONFIG.fontSizes, ...loaded.fontSizes }
           }
+          // Decrypt API key if present
+          if (loaded.currentModel?.apiKey) {
+            try {
+              const machineId = await window.electronAPI.getMachineId()
+              const decrypted = await decryptApiKey(loaded.currentModel.apiKey, machineId)
+              if (decrypted) {
+                loaded.currentModel.apiKey = decrypted
+              }
+            } catch {
+              // Keep the key as-is if decryption fails (may be plaintext)
+            }
+          }
           set({ config: { ...DEFAULT_CONFIG, ...loaded }, loaded: true })
           return
         }
       }
-    } catch {}
+    } catch (e) {
+      console.error('加载配置失败:', e)
+    }
 
     // 使用默认配置
     set({ config: DEFAULT_CONFIG, loaded: true })
@@ -75,7 +91,16 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     try {
       const appPath = await window.electronAPI.getAppPath()
       const configPath = `${appPath}/config/app_config.json`
-      const data = JSON.stringify({ version: '1.0', config: get().config }, null, 2)
+      const configToSave = { ...get().config }
+      // Encrypt API key before saving
+      if (configToSave.currentModel.apiKey) {
+        const machineId = await window.electronAPI.getMachineId()
+        configToSave.currentModel = {
+          ...configToSave.currentModel,
+          apiKey: await encryptApiKey(configToSave.currentModel.apiKey, machineId),
+        }
+      }
+      const data = JSON.stringify({ version: '1.0', config: configToSave }, null, 2)
       await window.electronAPI.writeFile(configPath, data)
     } catch (error) {
       console.error('保存配置失败:', error)
@@ -89,12 +114,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         currentModel: { ...state.config.currentModel, ...partial },
       },
     }))
-    if (get().config.autoSave) get().saveConfig()
+    if (get().config.autoSave) {
+      if (saveTimer) clearTimeout(saveTimer)
+      saveTimer = setTimeout(() => get().saveConfig(), 300)
+    }
   },
 
   updateConfig: (partial) => {
     set(state => ({ config: { ...state.config, ...partial } }))
-    if (get().config.autoSave) get().saveConfig()
+    if (get().config.autoSave) {
+      if (saveTimer) clearTimeout(saveTimer)
+      saveTimer = setTimeout(() => get().saveConfig(), 300)
+    }
   },
 
   exportConfig: async (filePath) => {
@@ -114,7 +145,11 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const json = atob(result.data)
       const data = JSON.parse(json)
       if (data.config) {
-        set({ config: { ...DEFAULT_CONFIG, ...data.config } })
+        const imported = { ...DEFAULT_CONFIG, ...data.config }
+        if (data.config.fontSizes) {
+          imported.fontSizes = { ...DEFAULT_CONFIG.fontSizes, ...data.config.fontSizes }
+        }
+        set({ config: imported })
         get().saveConfig()
         return true
       }

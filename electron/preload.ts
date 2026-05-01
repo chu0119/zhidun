@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   writeFile: (filePath: string, content: string) => ipcRenderer.invoke('file:write', filePath, content),
   getFileInfo: (filePath: string) => ipcRenderer.invoke('file:getInfo', filePath),
+  deleteFile: (filePath: string) => ipcRenderer.invoke('file:delete', filePath),
 
   // Shell
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
@@ -34,6 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // App info
   getAppPath: () => ipcRenderer.invoke('app:getPath'),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getMachineId: () => ipcRenderer.invoke('app:getMachineId'),
 
   // Platform
   platform: process.platform,
@@ -44,6 +46,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // GeoIP offline lookup
   geoipLookup: (ips: string[]) => ipcRenderer.invoke('geoip:lookup', ips),
+
+  // Notification channels
+  emailSend: (options: any) => ipcRenderer.invoke('email:send', options),
+  showDesktopNotification: (options: any) => ipcRenderer.invoke('notification:desktop', options),
+  playAlertSound: (severity: string) => ipcRenderer.invoke('notification:playSound', severity),
+  onPlaySound: (callback: (severity: string) => void) => {
+    const handler = (_event: any, severity: string) => callback(severity)
+    ipcRenderer.on('notification:play-sound', handler)
+    return () => { ipcRenderer.removeListener('notification:play-sound', handler) }
+  },
+
+  // Realtime monitoring
+  realtimeStart: (config: any) => ipcRenderer.invoke('realtime:start', config),
+  realtimeStop: (monitorId: string) => ipcRenderer.invoke('realtime:stop', monitorId),
+  realtimeTestSSH: (sshConfig: any) => ipcRenderer.invoke('realtime:testSSH', sshConfig),
+  onRealtimeData: (callback: (data: any) => void) => {
+    const handler = (_event: any, data: any) => callback(data)
+    ipcRenderer.on('realtime:data', handler)
+    return () => ipcRenderer.removeListener('realtime:data', handler)
+  },
 
   // Menu events listener
   onMenuAction: (callback: (action: string) => void) => {

@@ -8,23 +8,41 @@ import { formatTime } from '@/utils/helpers'
 interface HistoryDialogProps {
   open: boolean
   onClose: () => void
+  onViewReport?: () => void
 }
 
-export function HistoryDialog({ open, onClose }: HistoryDialogProps) {
-  const { history, searchHistory, deleteRecord, clearAll } = useHistoryStore()
-  const setReportText = useAnalysisStore(s => s.setReportText)
+export function HistoryDialog({ open, onClose, onViewReport }: HistoryDialogProps) {
+  const { history, searchHistory, deleteRecord, clearAll, loadSnapshot } = useHistoryStore()
+  const restoreFromSnapshot = useAnalysisStore(s => s.restoreFromSnapshot)
+  const setCurrentFile = useAnalysisStore(s => s.setCurrentFile)
   const [keyword, setKeyword] = useState('')
   const [selectedRecord, setSelectedRecord] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
   if (!open) return null
 
   const filtered = keyword ? searchHistory(keyword) : history
   const selected = history.find(r => r.id === selectedRecord)
 
-  const handleViewReport = (record: typeof history[0]) => {
-    if (record.reportText) {
-      setReportText(record.reportText)
+  const handleViewReport = async (record: typeof history[0]) => {
+    if (record.hasSnapshot) {
+      setLoading(true)
+      try {
+        const snapshot = await loadSnapshot(record.id)
+        if (snapshot) {
+          restoreFromSnapshot(snapshot)
+          setCurrentFile(record.filePath)
+          onClose()
+          onViewReport?.()
+        }
+      } finally {
+        setLoading(false)
+      }
+    } else if (record.reportText) {
+      // 兼容旧记录（无快照）
+      useAnalysisStore.getState().setReportText(record.reportText)
       onClose()
+      onViewReport?.()
     }
   }
 
@@ -81,6 +99,9 @@ export function HistoryDialog({ open, onClose }: HistoryDialogProps) {
                     <span>{record.timestamp}</span>
                     <span>{record.modelProvider}</span>
                     <span>{formatTime(Math.floor(record.analysisTime))}</span>
+                    {record.hasSnapshot && (
+                      <span className="text-[var(--accent-primary)]">完整快照</span>
+                    )}
                   </div>
                 </div>
               ))
@@ -97,11 +118,15 @@ export function HistoryDialog({ open, onClose }: HistoryDialogProps) {
                   <div><span className="text-[var(--text-dim)]">模型:</span> {selected.modelProvider} / {selected.modelName}</div>
                   <div><span className="text-[var(--text-dim)]">行数:</span> {selected.linesAnalyzed}</div>
                   <div><span className="text-[var(--text-dim)]">耗时:</span> {formatTime(Math.floor(selected.analysisTime))}</div>
+                  {selected.hasSnapshot && (
+                    <div className="text-[var(--accent-primary)] text-xs">包含完整分析快照（本地分析 + GeoIP + Bot 检测 + 报告）</div>
+                  )}
                 </div>
-                {selected.reportText && (
+                {(selected.hasSnapshot || selected.reportText) && (
                   <button onClick={() => handleViewReport(selected)}
-                    className="neon-btn primary w-full text-sm">
-                    查看报告
+                    disabled={loading}
+                    className="neon-btn primary w-full text-sm disabled:opacity-50">
+                    {loading ? '加载中...' : selected.hasSnapshot ? '查看完整分析' : '查看报告'}
                   </button>
                 )}
               </div>

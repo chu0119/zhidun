@@ -2,10 +2,12 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import readline from 'readline'
+import { createHash } from 'crypto'
 import { createAppMenu } from './menu'
 import { setupContextMenu } from './context-menu'
 import { setupAutoUpdater } from './updater'
 import { streamAnalyze, StreamingRule } from './streaming-analyzer'
+import { startMonitor, stopMonitor, stopAllMonitors, testSSHConnection, MonitorConfig, MonitorSSHConfig } from './realtime-monitor'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -44,6 +46,10 @@ function createWindow() {
   }
 }
 
+app.on('before-quit', () => {
+  stopAllMonitors()
+})
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
@@ -70,6 +76,41 @@ app.whenReady().then(() => {
 })
 
 // ==================== IPC Handlers ====================
+
+// 路径安全校验：防止路径穿越攻击
+function validatePath(filePath: string): boolean {
+  if (!filePath || typeof filePath !== 'string') return false
+  const normalized = path.normalize(filePath)
+  // 禁止 .. 组件（防止目录穿越）
+  if (normalized.includes('..')) return false
+  // 禁止 null 字节
+  if (normalized.includes('\x00')) return false
+  return true
+}
+
+// SSRF 防护：HTTP 请求域名白名单
+const ALLOWED_HTTP_HOSTS = [
+  'ip-api.com',
+  'ipapi.co',
+  'ipwhois.app',
+  'ipinfo.io',
+  'api.telegram.org',
+  'open.feishu.cn',
+  'oapi.dingtalk.com',
+  'qyapi.weixin.qq.com',
+  'sctapi.ftqq.com',
+  'www.pushplus.plus',
+  'api.day.app',
+]
+
+function isAllowedHttpHost(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr)
+    return ALLOWED_HTTP_HOSTS.some(host => parsed.hostname === host || parsed.hostname.endsWith('.' + host))
+  } catch {
+    return false
+  }
+}
 
 function setupIPC() {
   // Window controls
@@ -111,10 +152,11 @@ function setupIPC() {
 
   // List log files in folder
   ipcMain.handle('folder:listLogFiles', async (_, folderPath: string) => {
+    if (!validatePath(folderPath)) return { success: false, error: '无效的路径', files: [] }
     try {
       const extensions = ['.log', '.txt', '.csv', '.json', '.ndjson', '.jsonl', '.gz']
       const files: string[] = []
-      const entries = fs.readdirSync(folderPath, { withFileTypes: true })
+      const entries = await fs.promises.readdir(folderPath, { withFileTypes: true })
       for (const entry of entries) {
         if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase()
@@ -142,8 +184,9 @@ function setupIPC() {
 
   // Read file
   ipcMain.handle('file:read', async (_, filePath: string) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
     try {
-      const buffer = fs.readFileSync(filePath)
+      const buffer = await fs.promises.readFile(filePath)
       return { success: true, data: buffer.toString('base64'), size: buffer.length }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -152,9 +195,10 @@ function setupIPC() {
 
   // Read file as text with encoding detection
   ipcMain.handle('file:readText', async (_, filePath: string) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
     try {
       const chardet = require('chardet')
-      const buffer = fs.readFileSync(filePath)
+      const buffer = await fs.promises.readFile(filePath)
       const encoding = chardet.detect(buffer) || 'utf-8'
       const iconv = require('iconv-lite')
       const text = iconv.decode(buffer, encoding)
@@ -169,15 +213,16 @@ function setupIPC() {
     maxLines?: number
     encoding?: string
   }) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径', lines: [], totalLines: 0, encoding: 'utf-8' }
     try {
       const maxLines = options?.maxLines || 50000
       const chardet = require('chardet')
 
       // 先读一小块检测编码
       const sampleBuf = Buffer.alloc(64 * 1024)
-      const fd = fs.openSync(filePath, 'r')
-      const bytesRead = fs.readSync(fd, sampleBuf, 0, sampleBuf.length, 0)
-      fs.closeSync(fd)
+      const fd = await fs.promises.open(filePath, 'r')
+      const { bytesRead } = await fd.read(sampleBuf, 0, sampleBuf.length, 0)
+      await fd.close()
       const detectedEncoding = chardet.detect(sampleBuf.slice(0, bytesRead)) || 'utf-8'
       const encoding = options?.encoding || detectedEncoding
 
@@ -225,7 +270,7 @@ function setupIPC() {
         lines: Array.from(combined),
         totalLines,
         encoding,
-        size: fs.statSync(filePath).size,
+        size: (await fs.promises.stat(filePath)).size,
         sampledLines: combined.size,
       }
     } catch (error: any) {
@@ -235,6 +280,7 @@ function setupIPC() {
 
   // 流式统计文件行数（快速，不保留内容）
   ipcMain.handle('file:countLines', async (_, filePath: string) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
     try {
       let count = 0
       const stream = fs.createReadStream(filePath)
@@ -250,6 +296,7 @@ function setupIPC() {
 
   // 流式规则引擎全量扫描（大文件专用，不采样，逐行匹配）
   ipcMain.handle('file:streamAnalyze', async (_, filePath: string, rules: StreamingRule[]) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
     try {
       const result = await streamAnalyze(filePath, rules, {
         maxMatches: 50000,
@@ -264,14 +311,15 @@ function setupIPC() {
     }
   })
 
-  // Write file
+  // Write file (atomic: write to temp file then rename)
   ipcMain.handle('file:write', async (_, filePath: string, content: string) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
     try {
       const dir = path.dirname(filePath)
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true })
-      }
-      fs.writeFileSync(filePath, content, 'utf-8')
+      await fs.promises.mkdir(dir, { recursive: true })
+      const tmpPath = filePath + '.tmp.' + Date.now()
+      await fs.promises.writeFile(tmpPath, content, 'utf-8')
+      await fs.promises.rename(tmpPath, filePath)
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
@@ -280,8 +328,9 @@ function setupIPC() {
 
   // Get file info
   ipcMain.handle('file:getInfo', async (_, filePath: string) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
     try {
-      const stat = fs.statSync(filePath)
+      const stat = await fs.promises.stat(filePath)
       return {
         success: true,
         info: {
@@ -297,9 +346,28 @@ function setupIPC() {
     }
   })
 
-  // Shell open external
+  // Delete file
+  ipcMain.handle('file:delete', async (_, filePath: string) => {
+    if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
+    try {
+      await fs.promises.unlink(filePath)
+      return { success: true }
+    } catch (error: any) {
+      if (error.code === 'ENOENT') return { success: true }
+      return { success: false, error: error.message }
+    }
+  })
+
+  // Shell open external (只允许 http/https 协议)
   ipcMain.on('shell:openExternal', (_, url: string) => {
-    shell.openExternal(url)
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        shell.openExternal(url)
+      }
+    } catch {
+      // 无效 URL，忽略
+    }
   })
 
   // Get app path
@@ -312,8 +380,17 @@ function setupIPC() {
     return app.getVersion()
   })
 
+  // Get machine-specific ID (stable per OS installation)
+  ipcMain.handle('app:getMachineId', () => {
+    const userData = app.getPath('userData')
+    return createHash('sha256').update(userData + '_zhidun_machine').digest('hex').slice(0, 32)
+  })
+
   // HTTP request (用于 GeoIP 等外部 API 调用，避免 CORS 限制)
   ipcMain.handle('http:request', async (_, url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) => {
+    if (!isAllowedHttpHost(url)) {
+      return { success: false, error: `不允许的请求目标: ${new URL(url).hostname}` }
+    }
     try {
       const response = await fetch(url, {
         method: options?.method || 'GET',
@@ -327,27 +404,112 @@ function setupIPC() {
     }
   })
 
-  // GeoIP 离线查询（使用 geoip-lite）
+  // GeoIP 离线查询（使用 geoip-lite，分批让步避免阻塞事件循环）
   ipcMain.handle('geoip:lookup', async (_, ips: string[]) => {
     try {
       const geoip = require('geoip-lite')
       const results: Record<string, any> = {}
-      for (const ip of ips) {
-        const r = geoip.lookup(ip)
-        if (r) {
-          results[ip] = {
-            country: r.country || '',
-            region: r.region || '',
-            city: r.city || '',
-            lat: r.ll?.[0] || 0,
-            lon: r.ll?.[1] || 0,
-            timezone: r.timezone || '',
+      const BATCH_SIZE = 100
+      for (let i = 0; i < ips.length; i += BATCH_SIZE) {
+        const batch = ips.slice(i, i + BATCH_SIZE)
+        for (const ip of batch) {
+          const r = geoip.lookup(ip)
+          if (r) {
+            results[ip] = {
+              country: r.country || '',
+              region: r.region || '',
+              city: r.city || '',
+              lat: r.ll?.[0] || 0,
+              lon: r.ll?.[1] || 0,
+              timezone: r.timezone || '',
+            }
           }
+        }
+        // 让出事件循环，使其他 IPC 请求（如设置保存）有机会执行
+        if (i + BATCH_SIZE < ips.length) {
+          await new Promise<void>(resolve => setImmediate(resolve))
         }
       }
       return { success: true, results }
     } catch (error: any) {
       return { success: false, error: error.message, results: {} }
     }
+  })
+
+  // ==================== 实时监控 ====================
+
+  // 启动实时监控
+  ipcMain.handle('realtime:start', async (_, config: MonitorConfig) => {
+    try {
+      const result = await startMonitor(config, (data) => {
+        mainWindow?.webContents.send('realtime:data', data)
+      })
+      return result
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 停止实时监控
+  ipcMain.handle('realtime:stop', async (_, monitorId: string) => {
+    try {
+      return stopMonitor(monitorId)
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 测试 SSH 连接
+  ipcMain.handle('realtime:testSSH', async (_, sshConfig: MonitorSSHConfig) => {
+    try {
+      return await testSSHConnection(sshConfig)
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ==================== 通知渠道 IPC ====================
+
+  // 邮件发送 (SMTP)
+  ipcMain.handle('email:send', async (_, options: { host: string; port: number; user: string; pass: string; from: string; to: string; subject: string; html: string }) => {
+    try {
+      const nodemailer = require('nodemailer')
+      const transporter = nodemailer.createTransport({
+        host: options.host,
+        port: options.port,
+        secure: options.port === 465,
+        auth: { user: options.user, pass: options.pass },
+      })
+      await transporter.sendMail({
+        from: options.from,
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+      })
+      return { success: true }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  // 桌面通知
+  ipcMain.handle('notification:desktop', async (_, options: { title: string; body: string; severity: string }) => {
+    const { Notification } = require('electron')
+    if (Notification.isSupported()) {
+      new Notification({
+        title: options.title,
+        body: options.body,
+        silent: false,
+      }).show()
+    }
+    return { success: true }
+  })
+
+  // 声音告警
+  ipcMain.handle('notification:playSound', async (_, severity: string) => {
+    if (mainWindow && (severity === 'critical' || severity === 'high')) {
+      mainWindow.webContents.send('notification:play-sound', severity)
+    }
+    return { success: true }
   })
 }

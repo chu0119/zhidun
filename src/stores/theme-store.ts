@@ -18,7 +18,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
     document.documentElement.setAttribute('data-theme', theme)
     set({ currentTheme: theme })
     // 同步到配置存储以实现持久化
-    useConfigStore.getState().updateConfig({ cyberTheme: theme, theme })
+    useConfigStore.getState().updateConfig({ cyberTheme: theme })
   },
 
   initTheme: () => {

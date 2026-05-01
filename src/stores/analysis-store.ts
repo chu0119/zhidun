@@ -6,6 +6,7 @@ import type { LogMetadata } from '@/types/log'
 import type { RuleAnalysisResult } from '@/core/rule-engine'
 import type { GeoIPResult } from '@/core/geoip'
 import type { BotStat } from '@/core/bot-detector'
+import type { AnalysisSnapshot } from '@/types/analysis'
 
 interface PreprocessResult {
   totalLines: number
@@ -75,6 +76,7 @@ interface AnalysisState {
   startLocalTimer: () => void
   stopLocalTimer: () => void
   clearAll: () => void
+  restoreFromSnapshot: (snapshot: AnalysisSnapshot) => void
 }
 
 export const useAnalysisStore = create<AnalysisState>((set, get) => ({
@@ -107,9 +109,10 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   // ---- AI Actions ----
   setStatus: (status) => set({ status }),
 
-  addProgress: (message) => set(state => ({
-    progressMessages: [...state.progressMessages, `[${new Date().toLocaleTimeString()}] ${message}`],
-  })),
+  addProgress: (message) => set(state => {
+    const newMessages = [...state.progressMessages, `[${new Date().toLocaleTimeString()}] ${message}`]
+    return { progressMessages: newMessages.length > 500 ? newMessages.slice(-500) : newMessages }
+  }),
 
   setReportText: (text) => {
     const thinkingMatch = text.match(/<thinking>([\s\S]*?)<\/thinking>/)
@@ -133,9 +136,10 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   setPreprocessStatus: (status) => set({ preprocessStatus: status }),
   setPreprocessResult: (result) => set({ preprocessResult: result }),
 
-  addLocalProgress: (message) => set(state => ({
-    localProgressMessages: [...state.localProgressMessages, `[${new Date().toLocaleTimeString()}] ${message}`],
-  })),
+  addLocalProgress: (message) => set(state => {
+    const newMessages = [...state.localProgressMessages, `[${new Date().toLocaleTimeString()}] ${message}`]
+    return { localProgressMessages: newMessages.length > 500 ? newMessages.slice(-500) : newMessages }
+  }),
 
   setLocalReportText: (text) => set({ localReportText: text }),
   setLocalElapsedTime: (t) => set({ localElapsedTime: t }),
@@ -152,6 +156,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   // ---- Timer Actions ----
   startTimer: () => {
+    const { timerInterval } = get()
+    if (timerInterval) clearInterval(timerInterval)
     const interval = setInterval(() => {
       set(state => ({ elapsedTime: state.elapsedTime + 1 }))
     }, 1000)
@@ -165,6 +171,8 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
   },
 
   startLocalTimer: () => {
+    const { localTimerInterval } = get()
+    if (localTimerInterval) clearInterval(localTimerInterval)
     const interval = setInterval(() => {
       set(state => ({ localElapsedTime: state.localElapsedTime + 1 }))
     }, 1000)
@@ -203,6 +211,39 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       timerInterval: null,
       localTimerInterval: null,
       abortController: null,
+    })
+  },
+
+  restoreFromSnapshot: (snapshot: AnalysisSnapshot) => {
+    // 将快照中的 RuleAnalysisResult 的 pattern 字符串重建为 RegExp
+    let localRuleResult = snapshot.localRuleResult as RuleAnalysisResult | null
+    if (localRuleResult) {
+      // matches 中的 rule.patterns 已被序列化为字符串数组或丢失，这里不做重建
+      // 规则引擎的 pattern 仅用于运行时匹配，展示时不需要
+      localRuleResult = {
+        ...localRuleResult,
+        matches: localRuleResult.matches.map(m => ({ ...m, rule: { ...m.rule, patterns: [] as any } })),
+        aggregatedAlerts: localRuleResult.aggregatedAlerts.map(a => ({ ...a, rule: { ...a.rule, patterns: [] as any } })),
+      }
+    }
+
+    // 将 geoIPResults Record 转回 Map
+    let geoMap: Map<string, GeoIPResult> | null = null
+    if (snapshot.geoIPResults && Object.keys(snapshot.geoIPResults).length > 0) {
+      geoMap = new Map(Object.entries(snapshot.geoIPResults))
+    }
+
+    set({
+      localRuleResult,
+      localReportText: snapshot.localReportText,
+      reportText: snapshot.aiReportText,
+      botStats: snapshot.botStats as BotStat[],
+      geoIPResults: geoMap,
+      preprocessResult: snapshot.preprocessResult,
+      logLines: snapshot.logLines,
+      preprocessStatus: 'done',
+      status: snapshot.aiReportText ? 'done' : 'idle',
+      error: null,
     })
   },
 }))

@@ -35,12 +35,30 @@ interface ElectronAPI {
   onStreamProgress: (callback: (data: { linesScanned: number; matchesFound: number }) => void) => () => void
   writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
   getFileInfo: (filePath: string) => Promise<{ success: boolean; info?: any; error?: string }>
+  deleteFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   openExternal: (url: string) => void
   getAppPath: () => Promise<string>
   getVersion: () => Promise<string>
+  getMachineId: () => Promise<string>
+  emailSend: (options: { host: string; port: number; user: string; pass: string; from: string; to: string; subject: string; html: string }) => Promise<{ success: boolean; error?: string }>
+  showDesktopNotification: (options: { title: string; body: string; severity: string }) => Promise<void>
+  playAlertSound: (severity: string) => Promise<void>
+  onPlaySound: (callback: (severity: string) => void) => () => void
   platform: string
   httpRequest: (url: string, options?: { method?: string; body?: string; headers?: Record<string, string> }) => Promise<{ success: boolean; status?: number; data?: string; error?: string }>
   geoipLookup: (ips: string[]) => Promise<{ success: boolean; results: Record<string, { country: string; region: string; city: string; lat: number; lon: number; timezone: string }>; error?: string }>
+  realtimeStart: (config: {
+    mode: 'local' | 'ssh'
+    filePath: string
+    rules: any[]
+    ssh?: { host: string; port: number; username: string; password?: string; privateKey?: string }
+  }) => Promise<{ success: boolean; monitorId?: string; error?: string }>
+  realtimeStop: (monitorId: string) => Promise<{ success: boolean; error?: string }>
+  realtimeTestSSH: (sshConfig: { host: string; port: number; username: string; password?: string; privateKey?: string }) => Promise<{ success: boolean; error?: string }>
+  onRealtimeData: (callback: (data: {
+    type: 'line' | 'match' | 'stats' | 'error' | 'connected'
+    payload: any
+  }) => void) => () => void
   onMenuAction: (callback: (action: string) => void) => () => void
   checkUpdate: () => Promise<{ hasUpdate?: boolean; error?: string }>
   downloadUpdate: () => Promise<{ success: boolean; error?: string }>

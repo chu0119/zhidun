@@ -17,6 +17,7 @@ export interface CustomRule {
 interface RulesState {
   rules: CustomRule[]
   loaded: boolean
+  nextId: number
 
   // 操作
   loadRules: () => Promise<void>
@@ -29,11 +30,10 @@ interface RulesState {
   exportRules: () => string
 }
 
-let nextId = 1
-
 export const useRulesStore = create<RulesState>((set, get) => ({
   rules: [],
   loaded: false,
+  nextId: 1,
 
   loadRules: async () => {
     try {
@@ -45,12 +45,14 @@ export const useRulesStore = create<RulesState>((set, get) => ({
         const json = atob(result.data)
         const data = JSON.parse(json)
         if (Array.isArray(data.rules)) {
-          set({ rules: data.rules, loaded: true })
-          nextId = Math.max(...data.rules.map((r: CustomRule) => parseInt(r.id.replace('cr-', '')) || 0), 0) + 1
+          const maxId = Math.max(...data.rules.map((r: CustomRule) => parseInt(r.id.replace('cr-', '')) || 0), 0)
+          set({ rules: data.rules, loaded: true, nextId: maxId + 1 })
           return
         }
       }
-    } catch {}
+    } catch (e) {
+      console.error('加载自定义规则失败:', e)
+    }
 
     set({ rules: [], loaded: true })
     get().saveRules()
@@ -69,13 +71,14 @@ export const useRulesStore = create<RulesState>((set, get) => ({
 
   addRule: (rule) => {
     const now = new Date().toISOString()
+    const { nextId } = get()
     const newRule: CustomRule = {
       ...rule,
-      id: `cr-${nextId++}`,
+      id: `cr-${nextId}`,
       createdAt: now,
       updatedAt: now,
     }
-    set(state => ({ rules: [...state.rules, newRule] }))
+    set(state => ({ rules: [...state.rules, newRule], nextId: state.nextId + 1 }))
     get().saveRules()
   },
 
@@ -109,21 +112,42 @@ export const useRulesStore = create<RulesState>((set, get) => ({
     try {
       const data = JSON.parse(json)
       const rules = Array.isArray(data) ? data : data.rules || []
+      const newRules: CustomRule[] = []
 
       for (const rule of rules) {
         if (!rule.name || !rule.patterns) {
           errors.push(`跳过无效规则: ${JSON.stringify(rule).substring(0, 50)}`)
           continue
         }
-        get().addRule({
+        const patterns = Array.isArray(rule.patterns) ? rule.patterns : [rule.patterns]
+        // 验证正则合法性
+        const invalidPatterns: string[] = []
+        for (const p of patterns) {
+          try { new RegExp(p) } catch { invalidPatterns.push(p) }
+        }
+        if (invalidPatterns.length > 0) {
+          errors.push(`规则 "${rule.name}" 含无效正则: ${invalidPatterns.join(', ')}`)
+          continue
+        }
+        const now = new Date().toISOString()
+        const { nextId } = get()
+        newRules.push({
+          id: `cr-${nextId + newRules.length}`,
           name: rule.name,
           category: rule.category || '自定义',
           severity: rule.severity || 'medium',
           description: rule.description || '',
-          patterns: Array.isArray(rule.patterns) ? rule.patterns : [rule.patterns],
+          patterns,
           enabled: rule.enabled !== false,
+          createdAt: now,
+          updatedAt: now,
         })
         success++
+      }
+
+      if (newRules.length > 0) {
+        set(state => ({ rules: [...state.rules, ...newRules], nextId: state.nextId + newRules.length }))
+        get().saveRules()
       }
     } catch (e: any) {
       errors.push(`JSON 解析失败: ${e.message}`)

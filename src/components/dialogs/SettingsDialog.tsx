@@ -29,7 +29,6 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const handleFontChange = (key: keyof typeof config.fontSizes, value: number) => {
     const newFontSizes = { ...config.fontSizes, [key]: value }
     updateConfig({ fontSizes: newFontSizes })
-    // 实时应用 CSS 变量 + 缩放比例
     document.documentElement.style.setProperty(`--font-${key}`, `${value}px`)
     document.documentElement.style.setProperty(`--font-${key}-scale`, `${value / BASE_SIZES[key]}`)
   }

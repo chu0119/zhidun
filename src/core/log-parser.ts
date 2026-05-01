@@ -55,9 +55,9 @@ export class LogParser {
       throw new Error(`读取文件失败: ${result.error}`)
     }
 
-    const text = result.text as string
-    const allLines = text.split('\n').filter(line => line.trim().length > 0)
-    const totalLines = allLines.length
+    const text = (result.text ?? '') as string
+    const allLines = text.split('\n')
+    const totalLines = allLines.filter(line => line.trim().length > 0).length
 
     let lines: string[]
     if (maxLines && allLines.length > maxLines) {

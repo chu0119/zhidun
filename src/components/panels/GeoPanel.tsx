@@ -31,7 +31,8 @@ export function GeoPanel() {
   // 如果没有 GeoIP 结果，尝试自动查询
   const doGeoLookup = useCallback(async () => {
     if (logLines.length === 0) return
-    if (geoResults && geoResults.size > 0) return
+    const currentResults = useAnalysisStore.getState().geoIPResults
+    if (currentResults && currentResults.size > 0) return
 
     setLoading(true)
     setError(null)
@@ -54,7 +55,7 @@ export function GeoPanel() {
     } finally {
       setLoading(false)
     }
-  }, [logLines, geoResults])
+  }, [logLines])
 
   useEffect(() => {
     doGeoLookup()
@@ -94,7 +95,7 @@ export function GeoPanel() {
     if (geoArray.length === 0) return null
 
     const scatterData = geoArray
-      .filter(g => g.lat && g.lon)
+      .filter(g => g.lat != null && g.lon != null)
       .slice(0, 50)
       .map(g => ({
         name: g.ip,

@@ -14,8 +14,9 @@ export interface GeoIPResult {
   as: string
 }
 
-// 内存缓存
+// 内存缓存（最大 10,000 条）
 const cache = new Map<string, GeoIPResult>()
+const MAX_CACHE_SIZE = 10000
 
 // 私有 IP 范围检测
 function isPrivateIP(ip: string): boolean {
@@ -123,6 +124,10 @@ export async function lookupIPs(ips: string[]): Promise<Map<string, GeoIPResult>
             isp: '',
             org: '',
             as: '',
+          }
+          if (cache.size >= MAX_CACHE_SIZE) {
+            const firstKey = cache.keys().next().value
+            if (firstKey) cache.delete(firstKey)
           }
           cache.set(ip, geo)
           result.set(ip, geo)

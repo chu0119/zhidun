@@ -40,7 +40,14 @@ export function setupContextMenu(mainWindow: BrowserWindow) {
         },
         {
           label: '在浏览器中打开',
-          click: () => require('electron').shell.openExternal(params.linkURL),
+          click: () => {
+            try {
+              const url = new URL(params.linkURL)
+              if (url.protocol === 'https:' || url.protocol === 'http:') {
+                require('electron').shell.openExternal(params.linkURL)
+              }
+            } catch { /* 无效 URL，忽略 */ }
+          },
         },
       )
     }

@@ -62,14 +62,20 @@ export async function streamAnalyze(
   const chardet = require('chardet')
   const iconv = require('iconv-lite')
 
-  // 检测编码
+  // 检测编码（异步读取，不阻塞事件循环）
   let encoding = options?.encoding
   if (!encoding) {
     const sampleBuf = Buffer.alloc(64 * 1024)
-    const fd = fs.openSync(filePath, 'r')
-    const bytesRead = fs.readSync(fd, sampleBuf, 0, sampleBuf.length, 0)
-    fs.closeSync(fd)
-    encoding = chardet.detect(sampleBuf.slice(0, bytesRead)) || 'utf-8'
+    let fd: Awaited<ReturnType<typeof fs.promises.open>> | undefined
+    try {
+      fd = await fs.promises.open(filePath, 'r')
+      const { bytesRead } = await fd.read(sampleBuf, 0, sampleBuf.length, 0)
+      encoding = chardet.detect(sampleBuf.slice(0, bytesRead)) || 'utf-8'
+    } catch {
+      encoding = 'utf-8'
+    } finally {
+      if (fd) await fd.close()
+    }
   }
 
   // 预编译正则
@@ -93,6 +99,7 @@ export async function streamAnalyze(
   let matchedLineSet = new Set<number>()
 
   const stream = fs.createReadStream(filePath)
+  stream.on('error', () => {}) // 防止未处理的 error 事件崩溃
   const decoded = stream.pipe(iconv.decodeStream(encoding))
   const rl = readline.createInterface({ input: decoded, crlfDelay: Infinity })
 
@@ -105,6 +112,9 @@ export async function streamAnalyze(
         regex.lastIndex = 0
         const m = regex.exec(line)
         if (m) {
+          matchedLineSet.add(totalLines)
+          summary[rule.severity]++
+          categoryStats[rule.category] = (categoryStats[rule.category] || 0) + 1
           if (matches.length < maxMatches) {
             matches.push({
               ruleId: rule.id,
@@ -117,17 +127,14 @@ export async function streamAnalyze(
               description: rule.description,
               remediation: rule.remediation,
             })
-            matchedLineSet.add(totalLines)
-            summary[rule.severity]++
-            categoryStats[rule.category] = (categoryStats[rule.category] || 0) + 1
           }
           break // 同一行同一条规则只匹配一次
         }
       }
     }
 
-    // 进度回调（每 100 万行）
-    if (totalLines % 1000000 === 0) {
+    // 进度回调（每 10,000 行）
+    if (totalLines % 10000 === 0) {
       options?.onProgress?.(totalLines, matches.length)
     }
   }

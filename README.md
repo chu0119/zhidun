@@ -15,7 +15,7 @@
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.8.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.9.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -45,7 +45,7 @@
 <tr>
 <td align="center" width="25%">
 <img src="https://img.shields.io/badge/🧠-双引擎架构-00f0ff?style=for-the-badge&labelColor=0a0e1a" /><br/><br/>
-<b>AI 智能分析</b> 深度语义理解<br/><b>本地规则引擎</b> 65+ 条 OWASP 规则<br/>两种模式独立运行，互不干扰
+<b>AI 智能分析</b> 深度语义理解<br/><b>本地规则引擎</b> 130+ 条 OWASP 规则<br/>两种模式独立运行，互不干扰
 </td>
 <td align="center" width="25%">
 <img src="https://img.shields.io/badge/🤖-14大AI平台-b44aff?style=for-the-badge&labelColor=0a0e1a" /><br/><br/>
@@ -79,7 +79,7 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
 ### `⟁` 分析引擎
 
 - **AI 智能分析** — 深度语义理解，生成专业安全报告
-- **本地规则引擎** — 65+ 条 OWASP CRS 规则，离线可用
+- **本地规则引擎** — 130+ 条 OWASP CRS 规则，离线可用
 - **双模式独立** — AI 与本地分析互不干扰，独立报告
 - **智能采样** — 按威胁评分优先选取样本，控制 Token 用量
 
@@ -184,7 +184,7 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
   │  ③ 配置 AI 模型 →  选择提供商，填入 API Key（可选）            │
   │  ④ 开始分析                                                    │
   │     ├── AI 分析    →  深度语义分析，生成详细报告                │
-  │     └── 本地分析   →  65+ 条规则离线检测，即时出结果            │
+  │     └── 本地分析   →  130+ 条规则离线检测，即时出结果            │
   │  ⑤ 查看报告      →  自动跳转到对应报告页面                     │
   │  ⑥ 导出报告      →  DOCX / PDF 两种格式                        │
   │  ⑦ 数据面板      →  威胁/攻击/会话/路径/地理 5 大分析          │
@@ -464,6 +464,29 @@ ISP 运营商识别
 
 </div>
 
+### v1.9.0 (2026-05-01)
+
+**性能优化 — 消除 UI 卡死**
+- 规则引擎移入 Web Worker，分析期间 UI 完全流畅，可正常切换标签、打开设置、滚动页面
+- 主进程文件 I/O 全部异步化（fs.promises），设置保存不再排队等待
+- GeoIP 查询改为分批处理，每批 100 个 IP，批间让出事件循环
+
+**历史记录完整快照**
+- 每次扫描完成后自动保存完整分析快照（规则匹配、GeoIP、Bot 检测、原始日志）
+- 历史记录「查看完整分析」可恢复所有面板数据，包括威胁检测、地理分布、攻击会话等
+- 快照存储在独立 JSON 文件，主索引保持轻量
+
+**通知渠道增强**
+- 通知设置从设置对话框拆出为独立标题栏按钮
+- 钉钉/飞书新增加签签名支持（HMAC-SHA256）
+- 通知渠道布局优化，URL 字段不再溢出窗口
+
+**稳定性修复**
+- 修复分析期间修改设置导致应用卡死的问题
+- 修复历史记录「查看报告」点击无反应的 bug
+- 修复通知设置首次打开黑屏的问题
+- 新增 file:delete IPC handler，支持快照文件清理
+
 ### v1.8.0 (2026-05-01)
 
 **AI 提供商全面扩展**
@@ -575,6 +598,6 @@ ISP 运营商识别
 ![Electron](https://img.shields.io/badge/Powered_by-Electron-47848F?style=flat-square&logo=electron)
 ![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-b44aff?style=flat-square)
 
-**星川智盾** `v1.8.0` · 星川智盾安全团队
+**星川智盾** `v1.9.0` · 星川智盾安全团队
 
 </div>

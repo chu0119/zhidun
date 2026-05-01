@@ -1,7 +1,7 @@
 // 配置类型
 
 import type { PreprocessConfig } from '@/core/preprocessor'
-import type { NotificationConfig } from '@/core/notification-engine'
+import type { NotificationConfig, RealtimeNotificationConfig } from '@/core/notification-engine'
 
 export interface ModelConfig {
   provider: string
@@ -24,7 +24,6 @@ export interface AppConfig {
   currentModel: ModelConfig
   defaultLines: number
   autoSave: boolean
-  theme: string
   cyberTheme: string
   fontSize: number
   fontSizes: FontSizes
@@ -33,6 +32,7 @@ export interface AppConfig {
   showWelcome: boolean
   preprocessConfig?: PreprocessConfig
   notificationConfig?: NotificationConfig
+  realtimeNotificationConfig?: RealtimeNotificationConfig
 }
 
 export interface ConfigFile {

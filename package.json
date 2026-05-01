@@ -1,6 +1,6 @@
 {
   "name": "zhidun-electron",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "星川智盾 AI 网站日志安全分析工具",
   "author": {
     "name": "星川智盾安全团队",
@@ -15,7 +15,6 @@
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
-    "@types/topojson-client": "^3.1.5",
     "axios": "^1.7.7",
     "chardet": "^1.6.0",
     "docx": "^9.0.2",
@@ -27,21 +26,26 @@
     "html2canvas": "^1.4.1",
     "iconv-lite": "^0.6.3",
     "jspdf": "^4.2.1",
+    "nodemailer": "^8.0.7",
     "openai": "^4.67.3",
     "papaparse": "^5.4.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "ssh2": "^1.17.0",
     "topojson-client": "^3.1.0",
     "uuid": "^10.0.0",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
+    "@types/nodemailer": "^8.0.0",
     "@types/papaparse": "^5.3.14",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
+    "@types/ssh2": "^1.15.5",
+    "@types/topojson-client": "^3.1.5",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",

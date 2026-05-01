@@ -70,7 +70,7 @@ export const PROVIDER_INFO = [
 ] as const
 
 // 历史记录配置
-export const MAX_HISTORY_RECORDS = 100
+export const MAX_HISTORY_RECORDS = 50
 
 // 分析配置
 export const MAX_RETRY_ATTEMPTS = 2
@@ -90,7 +90,8 @@ export const ATTACK_TYPES = [
 export const RISK_LEVELS = ['严重', '高危', '中危', '低危', '信息']
 
 // 版本
-export const APP_VERSION = '1.8.0'
+declare const __APP_VERSION__: string
+export const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.9.0'
 
 // MITRE ATT&CK 战术颜色映射
 export const MITRE_TACTIC_COLORS: Record<string, string> = {
