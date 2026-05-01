@@ -32,6 +32,7 @@ interface ElectronAPI {
     categoryStats: Record<string, number>
     error?: string
   }>
+  streamCancel: () => Promise<{ success: boolean }>
   onStreamProgress: (callback: (data: { linesScanned: number; matchesFound: number }) => void) => () => void
   writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
   getFileInfo: (filePath: string) => Promise<{ success: boolean; info?: any; error?: string }>

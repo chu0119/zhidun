@@ -10,6 +10,7 @@ import { streamAnalyze, StreamingRule } from './streaming-analyzer'
 import { startMonitor, stopMonitor, stopAllMonitors, testSSHConnection, MonitorConfig, MonitorSSHConfig } from './realtime-monitor'
 
 let mainWindow: BrowserWindow | null = null
+let streamAbortController: AbortController | null = null
 
 const DIST = path.join(__dirname, '../dist')
 const PRELOAD = path.join(__dirname, './preload.js')
@@ -77,15 +78,38 @@ app.whenReady().then(() => {
 
 // ==================== IPC Handlers ====================
 
-// 路径安全校验：防止路径穿越攻击
-function validatePath(filePath: string): boolean {
+// 路径安全校验：限制在用户数据目录或临时文件目录内
+function validatePath(filePath: string, allowedDirs?: string[]): boolean {
   if (!filePath || typeof filePath !== 'string') return false
   const normalized = path.normalize(filePath)
   // 禁止 .. 组件（防止目录穿越）
   if (normalized.includes('..')) return false
   // 禁止 null 字节
   if (normalized.includes('\x00')) return false
-  return true
+
+  // 允许的目录白名单
+  const dirs = allowedDirs || [
+    app.getPath('userData'),
+    app.getPath('home'),
+    app.getPath('desktop'),
+    app.getPath('documents'),
+    app.getPath('downloads'),
+    app.getPath('temp'),
+  ]
+  return dirs.some(dir => normalized.startsWith(dir + path.sep) || normalized === dir)
+}
+
+// 检测是否为二进制文件（通过扩展名和魔数）
+function isBinaryFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase()
+  const binaryExts = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg', '.webp',
+    '.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz', '.zst',
+    '.exe', '.dll', '.so', '.dylib', '.bin', '.dat',
+    '.mp3', '.mp4', '.avi', '.mkv', '.mov', '.wav', '.flac',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.sqlite', '.db', '.woff', '.woff2', '.ttf', '.eot', '.class']
+  if (binaryExts.includes(ext)) return true
+  return false
 }
 
 // SSRF 防护：HTTP 请求域名白名单
@@ -196,6 +220,7 @@ function setupIPC() {
   // Read file as text with encoding detection
   ipcMain.handle('file:readText', async (_, filePath: string) => {
     if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
+    if (isBinaryFile(filePath)) return { success: false, error: '不支持读取二进制文件，请选择文本格式的日志文件' }
     try {
       const chardet = require('chardet')
       const buffer = await fs.promises.readFile(filePath)
@@ -297,8 +322,11 @@ function setupIPC() {
   // 流式规则引擎全量扫描（大文件专用，不采样，逐行匹配）
   ipcMain.handle('file:streamAnalyze', async (_, filePath: string, rules: StreamingRule[]) => {
     if (!validatePath(filePath)) return { success: false, error: '无效的文件路径', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
+    if (isBinaryFile(filePath)) return { success: false, error: '不支持分析二进制文件', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
+    streamAbortController = new AbortController()
     try {
       const result = await streamAnalyze(filePath, rules, {
+        signal: streamAbortController.signal,
         maxMatches: 50000,
         onProgress: (linesScanned, matchesFound) => {
           // 通过 webContents 发送进度到渲染进程
@@ -307,8 +335,22 @@ function setupIPC() {
       })
       return result
     } catch (error: any) {
+      if (streamAbortController?.signal.aborted) {
+        return { success: false, error: '分析已停止', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
+      }
       return { success: false, error: error.message, totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
+    } finally {
+      streamAbortController = null
     }
+  })
+
+  // 停止流式分析
+  ipcMain.handle('stream:cancel', async () => {
+    if (streamAbortController) {
+      streamAbortController.abort()
+      streamAbortController = null
+    }
+    return { success: true }
   })
 
   // Write file (atomic: write to temp file then rename)
@@ -472,9 +514,10 @@ function setupIPC() {
 
   // 邮件发送 (SMTP)
   ipcMain.handle('email:send', async (_, options: { host: string; port: number; user: string; pass: string; from: string; to: string; subject: string; html: string }) => {
+    let transporter: any = null
     try {
       const nodemailer = require('nodemailer')
-      const transporter = nodemailer.createTransport({
+      transporter = nodemailer.createTransport({
         host: options.host,
         port: options.port,
         secure: options.port === 465,
@@ -489,6 +532,8 @@ function setupIPC() {
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
+    } finally {
+      if (transporter) transporter.close().catch(() => {})
     }
   })
 

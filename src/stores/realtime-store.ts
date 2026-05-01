@@ -200,7 +200,20 @@ export const useRealtimeStore = create<RealtimeState>((set, get) => ({
     }
   },
 
-  setMonitorId: (monitorId) => set({ monitorId }),
+  setMonitorId: (monitorId) => {
+    set({ monitorId, activeSessionId: monitorId })
+    const s = get()
+    const active = getActiveSession(s)
+    if (active) {
+      set({
+        status: active.status,
+        error: active.error,
+        lines: active.lines,
+        matches: active.matches,
+        stats: active.stats,
+      })
+    }
+  },
 
   setError: (error) => {
     set({ error })

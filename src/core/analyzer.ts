@@ -185,6 +185,7 @@ export interface AIProviderInterface {
 export class LogAnalyzer {
   private provider: AIProviderInterface
   private systemPrompt: string
+  private originalSystemPrompt: string
   private progressCallback?: ProgressCallback
   private isRunning: boolean = true
   private abortController: AbortController | null = null
@@ -196,6 +197,7 @@ export class LogAnalyzer {
   ) {
     this.provider = provider
     this.systemPrompt = systemPrompt || DEFAULT_SYSTEM_PROMPT
+    this.originalSystemPrompt = this.systemPrompt
     this.progressCallback = progressCallback
   }
 
@@ -270,6 +272,7 @@ export class LogAnalyzer {
 
   reset() {
     this.isRunning = true
+    this.systemPrompt = this.originalSystemPrompt
   }
 
   private log(message: string) {

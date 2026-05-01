@@ -15,7 +15,7 @@
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.9.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.10.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -464,6 +464,38 @@ ISP 运营商识别
 
 </div>
 
+### v1.10.0 (2026-05-02)
+
+**安全加固**
+- validatePath 路径校验限制在 userData/home/desktop/documents/downloads/temp 目录内，防止任意文件读写
+- 导出配置时 API Key 脱敏处理，不再明文写入 JSON 文件
+- 用户自定义正则添加 ReDoS 防护（行长度限制 10000 字符）
+- 内置规则正则收紧 `.*` 为 `.{0,30}` 限制，消除潜在回溯风险
+
+**核心功能修复**
+- 流式分析（大文件模式）添加停止机制，点击停止可立即中断扫描
+- 并发分析防重入保护，防止快速双击启动重复分析流程
+- Web Worker 竞态修复，单文件分析与批量分析使用独立 Worker 实例
+- 拖拽文件到窗口可直接加载，修复之前只显示覆盖层但不处理文件的问题
+- 二进制文件自动检测并拒绝，不再产生乱码分析结果
+- analyzer reset() 恢复原始系统提示词，修复重试时提示词丢失问题
+
+**数据完整性**
+- 清除历史记录时同步删除磁盘快照文件，不再残留
+- config 深度合并修复，currentModel 和 fontSizes 等嵌套对象不再被 undefined 覆盖
+- CIDR 解析添加完整输入验证（IP 各段 0-255、bits 0-32）
+- 实时监控 setMonitorId 状态同步修复
+
+**规则引擎优化**
+- SQL-016（WAF 绕过）规则添加上下文限制，大幅降低误报率
+- WEBSHELL-005（一句话木马）移除过于宽泛的 `$a($b.$c)` 模式
+- DIR-001（路径穿越）要求 query 参数上下文，避免匹配正常路径引用
+
+**体验优化**
+- 报告搜索从 DOM 操作改为 React state 驱动，支持上一个/下一个遍历所有匹配
+- 搜索栏显示当前匹配位置和总数（如 3/15）
+- 邮件发送后自动关闭 SMTP 连接，防止 transporter 连接泄漏
+
 ### v1.9.0 (2026-05-01)
 
 **实时日志监控**
@@ -605,6 +637,6 @@ ISP 运营商识别
 ![Electron](https://img.shields.io/badge/Powered_by-Electron-47848F?style=flat-square&logo=electron)
 ![Platform](https://img.shields.io/badge/Platform-Windows_%7C_macOS_%7C_Linux-b44aff?style=flat-square)
 
-**星川智盾** `v1.9.0` · 星川智盾安全团队
+**星川智盾** `v1.10.0` · 星川智盾安全团队
 
 </div>

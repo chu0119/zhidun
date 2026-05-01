@@ -1,6 +1,6 @@
 // 详细报告面板
 
-import React, { useState, useRef, useMemo } from 'react'
+import React, { useState, useRef, useMemo, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useAnalysisStore } from '@/stores/analysis-store'
@@ -129,8 +129,27 @@ export function ReportPanel({ mode }: ReportPanelProps) {
   const localRuleResult = useAnalysisStore(s => s.localRuleResult)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchVisible, setSearchVisible] = useState(false)
+  const [searchIndex, setSearchIndex] = useState(-1)
   const [expandedAlerts, setExpandedAlerts] = useState<Set<string>>(new Set())
   const contentRef = useRef<HTMLDivElement>(null)
+
+  // 搜索匹配位置
+  const searchMatches = useMemo(() => {
+    if (!searchQuery || !reportText) return []
+    const matches: number[] = []
+    const lower = reportText.toLowerCase()
+    const query = searchQuery.toLowerCase()
+    let pos = 0
+    while (true) {
+      const idx = lower.indexOf(query, pos)
+      if (idx === -1) break
+      matches.push(idx)
+      pos = idx + 1
+    }
+    return matches
+  }, [searchQuery, reportText])
+
+  const searchCount = searchMatches.length
 
   // 按规则ID聚合告警（用于详情展示）
   const alertGroups = useMemo(() => {
@@ -154,35 +173,20 @@ export function ReportPanel({ mode }: ReportPanelProps) {
   }
 
   const handleSearch = (direction: 'next' | 'prev') => {
-    if (!searchQuery || !contentRef.current) return
-
-    const container = contentRef.current
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-    let node: Text | null
-
-    container.querySelectorAll('.search-highlight').forEach(el => {
-      const parent = el.parentNode
-      if (parent) {
-        parent.replaceChild(document.createTextNode(el.textContent || ''), el)
-        parent.normalize()
-      }
-    })
-
-    while ((node = walker.nextNode() as Text | null)) {
-      const idx = (node.textContent || '').indexOf(searchQuery)
-      if (idx >= 0) {
-        const range = document.createRange()
-        range.setStart(node, idx)
-        range.setEnd(node, idx + searchQuery.length)
-        const span = document.createElement('span')
-        span.className = 'search-highlight'
-        span.style.cssText = 'background: rgba(0,240,255,0.3); color: #fff; border-radius: 2px; padding: 0 2px;'
-        range.surroundContents(span)
-        span.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        break
-      }
+    if (searchMatches.length === 0) return
+    if (direction === 'next') {
+      setSearchIndex(prev => prev >= searchMatches.length - 1 ? 0 : prev + 1)
+    } else {
+      setSearchIndex(prev => prev <= 0 ? searchMatches.length - 1 : prev - 1)
     }
   }
+
+  // 滚动到当前匹配位置
+  useEffect(() => {
+    if (searchIndex < 0 || !contentRef.current) return
+    const highlights = contentRef.current.querySelectorAll('.search-highlight-current')
+    highlights[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [searchIndex])
 
   // Ctrl+F 搜索快捷键
   React.useEffect(() => {
@@ -475,18 +479,21 @@ export function ReportPanel({ mode }: ReportPanelProps) {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setSearchIndex(0) }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSearch('next')
-              if (e.key === 'Escape') setSearchVisible(false)
+              if (e.key === 'Enter') handleSearch(e.shiftKey ? 'prev' : 'next')
+              if (e.key === 'Escape') { setSearchVisible(false); setSearchQuery(''); setSearchIndex(-1) }
             }}
             placeholder="搜索报告内容..."
             className="neon-input flex-1 text-sm py-1.5"
             autoFocus
           />
+          <span className="text-xs text-[var(--text-dim)] min-w-[60px] text-center">
+            {searchCount > 0 ? `${searchIndex + 1}/${searchCount}` : '无结果'}
+          </span>
           <button onClick={() => handleSearch('prev')} className="neon-btn text-xs px-3 py-1.5">▲</button>
           <button onClick={() => handleSearch('next')} className="neon-btn text-xs px-3 py-1.5">▼</button>
-          <button onClick={() => setSearchVisible(false)} className="neon-btn text-xs px-3 py-1.5">✕</button>
+          <button onClick={() => { setSearchVisible(false); setSearchQuery(''); setSearchIndex(-1) }} className="neon-btn text-xs px-3 py-1.5">✕</button>
         </div>
       )}
 

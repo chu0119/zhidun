@@ -125,6 +125,17 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   },
 
   clearAll: () => {
+    const { history } = get()
+    // 异步删除所有快照文件
+    if (history.length > 0) {
+      window.electronAPI.getAppPath().then(appPath => {
+        for (const record of history) {
+          if (record.hasSnapshot) {
+            window.electronAPI.deleteFile?.(`${appPath}/snapshots/${record.id}.json`).catch(() => {})
+          }
+        }
+      }).catch(() => {})
+    }
     set({ history: [] })
     get().saveHistory()
   },

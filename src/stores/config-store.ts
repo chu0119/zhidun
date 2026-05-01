@@ -74,7 +74,15 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
               // Keep the key as-is if decryption fails (may be plaintext)
             }
           }
-          set({ config: { ...DEFAULT_CONFIG, ...loaded }, loaded: true })
+          set({
+            config: {
+              ...DEFAULT_CONFIG,
+              ...loaded,
+              currentModel: { ...DEFAULT_CONFIG.currentModel, ...(loaded.currentModel || {}) },
+              fontSizes: { ...DEFAULT_CONFIG.fontSizes, ...(loaded.fontSizes || {}) },
+            },
+            loaded: true,
+          })
           return
         }
       }
@@ -130,7 +138,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   exportConfig: async (filePath) => {
     try {
-      const data = JSON.stringify({ version: '1.0', config: get().config }, null, 2)
+      const config = { ...get().config }
+      // 导出时脱敏 API Key
+      if (config.currentModel?.apiKey) {
+        config.currentModel = { ...config.currentModel, apiKey: '••••••••' }
+      }
+      const data = JSON.stringify({ version: '1.0', config }, null, 2)
       const result = await window.electronAPI.writeFile(filePath, data)
       return result.success
     } catch {

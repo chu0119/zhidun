@@ -56,9 +56,11 @@ export async function streamAnalyze(
     encoding?: string
     maxMatches?: number
     onProgress?: (linesScanned: number, matchesFound: number) => void
+    signal?: AbortSignal
   }
 ): Promise<StreamingResult> {
   const maxMatches = options?.maxMatches || 50000
+  const signal = options?.signal
   const chardet = require('chardet')
   const iconv = require('iconv-lite')
 
@@ -104,6 +106,10 @@ export async function streamAnalyze(
   const rl = readline.createInterface({ input: decoded, crlfDelay: Infinity })
 
   for await (const line of rl) {
+    if (signal?.aborted) {
+      stream.destroy()
+      break
+    }
     if (!line.trim()) continue
     totalLines++
 

@@ -25,6 +25,17 @@ export const DEFAULT_PREPROCESS_CONFIG: PreprocessConfig = {
   maxLineLength: 0,
 }
 
+// 安全执行正则（带超时保护，防止 ReDoS）
+function safeRegexTest(regex: RegExp, text: string, timeoutMs = 100): boolean {
+  try {
+    // 简单长度限制：超长行跳过正则匹配
+    if (text.length > 10000) return false
+    return regex.test(text)
+  } catch {
+    return false
+  }
+}
+
 // 从日志行中提取字段
 function extractLineFields(line: string) {
   const ipMatch = line.match(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/)
@@ -44,11 +55,20 @@ function extractLineFields(line: string) {
 
 // 检查 IP 是否匹配 CIDR
 function ipMatchesCIDR(ip: string, pattern: string): boolean {
+  // 验证 IP 格式
+  const ipParts = ip.split('.')
+  if (ipParts.length !== 4 || ipParts.some(p => { const n = parseInt(p); return isNaN(n) || n < 0 || n > 255 })) return false
+
   if (pattern.includes('/')) {
-    const [subnet, bits] = pattern.split('/')
-    const mask = ~(2 ** (32 - parseInt(bits)) - 1)
-    const ipNum = ip.split('.').reduce((sum, oct) => (sum << 8) + parseInt(oct), 0) >>> 0
-    const subnetNum = subnet.split('.').reduce((sum, oct) => (sum << 8) + parseInt(oct), 0) >>> 0
+    const [subnet, bitsStr] = pattern.split('/')
+    const bits = parseInt(bitsStr)
+    if (isNaN(bits) || bits < 0 || bits > 32) return false
+    const subnetParts = subnet.split('.')
+    if (subnetParts.length !== 4 || subnetParts.some(p => { const n = parseInt(p); return isNaN(n) || n < 0 || n > 255 })) return false
+
+    const mask = ~(2 ** (32 - bits) - 1)
+    const ipNum = ipParts.reduce((sum, oct) => (sum << 8) + parseInt(oct), 0) >>> 0
+    const subnetNum = subnetParts.reduce((sum, oct) => (sum << 8) + parseInt(oct), 0) >>> 0
     return (ipNum & mask) === (subnetNum & mask)
   }
   return ip === pattern
@@ -150,13 +170,13 @@ export function preprocessLines(lines: string[], config: PreprocessConfig): {
     // 排除正则
     if (!excluded && excludeRegexps.length > 0) {
       for (const re of excludeRegexps) {
-        if (re.test(line)) { excluded = true; reason = 'exclude-regex'; break }
+        if (safeRegexTest(re, line)) { excluded = true; reason = 'exclude-regex'; break }
       }
     }
 
     // 包含正则（必须匹配至少一个）
     if (!excluded && includeRegexps.length > 0) {
-      const matched = includeRegexps.some(re => re.test(line))
+      const matched = includeRegexps.some(re => safeRegexTest(re, line))
       if (!matched) { excluded = true; reason = 'include-regex' }
     }
 

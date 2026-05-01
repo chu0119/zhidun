@@ -34,8 +34,9 @@ import type { RuleMatch, RuleAnalysisResult } from '@/core/rule-engine'
 import { extractIPsFromLines, lookupIPs } from '@/core/geoip'
 import { detectBots } from '@/core/bot-detector'
 
-// Worker 引用（用于取消）
+// Worker 引用（单文件分析和批量分析使用独立实例）
 let analysisWorker: Worker | null = null
+let batchWorker: Worker | null = null
 import { useQueueStore, QueueItem } from '@/stores/queue-store'
 import { useRulesStore } from '@/stores/rules-store'
 import type { Rule } from '@/core/rule-engine'
@@ -145,15 +146,19 @@ function runAnalysisInWorker(
   lines: string[],
   rules: Rule[],
   onProgress: (msg: string) => void,
+  workerType: 'single' | 'batch' = 'single',
 ): { promise: Promise<{ result: RuleAnalysisResult; botStats: import('@/core/bot-detector').BotStat[]; ips: string[] }>; cancel: () => void } {
-  // 终止之前的 Worker
-  if (analysisWorker) {
-    analysisWorker.terminate()
-    analysisWorker = null
+  // 终止之前同类型的 Worker
+  const prevWorker = workerType === 'batch' ? batchWorker : analysisWorker
+  if (prevWorker) {
+    prevWorker.terminate()
+    if (workerType === 'batch') batchWorker = null
+    else analysisWorker = null
   }
 
   const worker = new Worker(new URL('../../workers/analysis.worker.ts', import.meta.url), { type: 'module' })
-  analysisWorker = worker
+  if (workerType === 'batch') batchWorker = worker
+  else analysisWorker = worker
 
   // 序列化规则（RegExp → {source, flags}）
   const serializableRules = rules.map(r => ({
@@ -168,18 +173,21 @@ function runAnalysisInWorker(
         onProgress(data.message)
       } else if (data.type === 'result') {
         worker.terminate()
-        analysisWorker = null
+        if (workerType === 'batch') batchWorker = null
+        else analysisWorker = null
         resolve({ result: data.result, botStats: data.botStats, ips: data.ips })
       } else if (data.type === 'error') {
         worker.terminate()
-        analysisWorker = null
+        if (workerType === 'batch') batchWorker = null
+        else analysisWorker = null
         reject(new Error(data.error))
       }
     }
 
     worker.onerror = (err) => {
       worker.terminate()
-      analysisWorker = null
+      if (workerType === 'batch') batchWorker = null
+      else analysisWorker = null
       reject(new Error(err.message || 'Worker 错误'))
     }
 
@@ -192,7 +200,8 @@ function runAnalysisInWorker(
       worker.postMessage({ type: 'cancel' })
       setTimeout(() => {
         worker.terminate()
-        analysisWorker = null
+        if (workerType === 'batch') batchWorker = null
+        else analysisWorker = null
       }, 100)
     },
   }
@@ -262,6 +271,10 @@ export function AppLayout() {
   const handlePreprocess = useCallback(async () => {
     const currentFileValue = useAnalysisStore.getState().currentFile
     if (!currentFileValue) return
+
+    // 防重入：如果正在分析中则不启动新的分析
+    const currentStatus = useAnalysisStore.getState().preprocessStatus
+    if (currentStatus === 'preparing' || currentStatus === 'analyzing') return
 
     const [fullPath, displayName] = currentFileValue.includes('|')
       ? currentFileValue.split('|')
@@ -520,6 +533,10 @@ export function AppLayout() {
     const currentFileValue = useAnalysisStore.getState().currentFile
     if (!currentFileValue) return
 
+    // 防重入
+    const currentAIStatus = useAnalysisStore.getState().status
+    if (currentAIStatus === 'preparing' || currentAIStatus === 'analyzing') return
+
     const preprocessResult = useAnalysisStore.getState().preprocessResult
     const logLines = useAnalysisStore.getState().logLines
 
@@ -760,6 +777,8 @@ export function AppLayout() {
         analysisWorker.terminate()
         analysisWorker = null
       }
+      // 停止流式分析（大文件模式）
+      window.electronAPI.streamCancel?.().catch(() => {})
     }
   }, [])
 
@@ -801,7 +820,7 @@ export function AppLayout() {
 
         useQueueStore.getState().updateItem(item.id, { progress: `正在分析 ${allLines.length} 行...` })
 
-        const { promise } = runAnalysisInWorker(allLines, getCustomRules(), () => {})
+        const { promise } = runAnalysisInWorker(allLines, getCustomRules(), () => {}, 'batch')
         const { result } = await promise
         useQueueStore.getState().markDone(item.id, result, result.report)
       } catch (error: any) {
@@ -880,6 +899,15 @@ export function AppLayout() {
       e.preventDefault()
       dragCounterRef.current = 0
       setIsDraggingFile(false)
+
+      const file = e.dataTransfer?.files?.[0]
+      if (file) {
+        const filePath = (file as any).path as string
+        if (filePath) {
+          const displayName = file.name
+          useAnalysisStore.getState().setCurrentFile(`${filePath}|${displayName}`)
+        }
+      }
     }
 
     document.addEventListener('dragenter', handleDragEnter)

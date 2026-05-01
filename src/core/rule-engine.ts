@@ -119,8 +119,8 @@ export const BUILT_IN_RULES: Rule[] = [
     id: 'SQL-006', name: '注释绕过注入', category: 'SQL注入', severity: 'high',
     patterns: [
       /\/\*!?\s*(union|select|insert|update|delete|drop|alter)\b/i,  // /*!union*/
-      /\bunion\b.*\/\*\*\//i,                           // union/**/
-      /'\s*(or|and)\s+.*\/\*\//i,                        // 'or ... /**/
+      /\bunion\b.{0,30}\/\*\*\//i,                           // union/**/
+      /'\s*(or|and)\s+.{0,30}\/\*\//i,                        // 'or ... /**/
     ],
     description: '检测到 SQL 注释绕过攻击',
     remediation: '过滤注释符号，使用参数化查询'
@@ -152,10 +152,10 @@ export const BUILT_IN_RULES: Rule[] = [
   {
     id: 'SQL-009', name: '注释符绕过注入', category: 'SQL注入', severity: 'high',
     patterns: [
-      /'\s*(or|and)\s+.*--/,                                // 'or ... --
-      /'\s*(or|and)\s+.*#/,                                 // 'or ... #
-      /\/\*\*\/.*\b(union|select|insert|update|delete)\b/i, // /**/...keyword
-      /\b(union|select)\b.*\/\*\*\//i,                     // keyword.../**/
+      /'\s*(or|and)\s+.{0,30}--/,                                // 'or ... --
+      /'\s*(or|and)\s+.{0,30}#/,                                 // 'or ... #
+      /\/\*\*\/.{0,30}\b(union|select|insert|update|delete)\b/i, // /**/...keyword
+      /\b(union|select)\b.{0,30}\/\*\*\//i,                     // keyword.../**/
     ],
     description: '检测到注释符绕过 SQL 注入',
     remediation: '过滤注释符号，使用参数化查询'
@@ -232,9 +232,9 @@ export const BUILT_IN_RULES: Rule[] = [
     id: 'SQL-016', name: 'WAF绕过注入', category: 'SQL注入', severity: 'high',
     patterns: [
       /\bunion\b\s+all\s+select\s+null/i,                  // UNION ALL SELECT NULL
-      /\bselect\b.*\bfrom\b.*\bwhere\b.*\blike\b/i,       // SELECT FROM WHERE LIKE
-      /\bselect\b.*\bfrom\b.*\border\s+by\b/i,            // SELECT FROM ORDER BY
-      /\bgroup\s+by\b.*\bhaving\b/i,                       // GROUP BY HAVING
+      /\bselect\b.{0,40}\bfrom\b.{0,40}\bwhere\b.{0,20}\blike\b.{0,20}['"]?\s*(or|and)\b/i,  // SELECT FROM WHERE LIKE ... OR/AND
+      /\bselect\b.{0,40}\bfrom\b.{0,40}\border\s+by\b.{0,15}['"]?\s*--/i,   // SELECT FROM ORDER BY --
+      /\bgroup\s+by\b.{0,20}\bhaving\b.{0,20}(char|concat|floor)\b/i,        // GROUP BY HAVING ... char/concat/floor
     ],
     description: '检测到 WAF 绕过型 SQL 注入',
     remediation: '更新 WAF 规则，使用参数化查询'
@@ -610,10 +610,9 @@ export const BUILT_IN_RULES: Rule[] = [
   // 目录遍历 (CWE-22) - 参考 CRS REQUEST-930
   // =====================================================================
   {
-    id: 'DIR-001', name: '路径穿越', category: '目录遍历', severity: 'critical',
+    id: 'DIR-001', name: '路径穿越', category: '目录遍历', severity: 'high',
     patterns: [
-      /\.\.\//g,                                         // ../ (with g flag for multiple matches)
-      /\.\.\\/g,                                         // ..\
+      /(?:^|[?&=])[^&\s]*\.\.\//i,                         // query param with ../
       /%2e%2e(%2f|%5c)/i,                                // %2e%2e%2f
       /%252e%252e%252f/i,                                // double-encoded
       /\.\.%00/i,                                        // ..%00 (null byte)
@@ -961,7 +960,7 @@ export const BUILT_IN_RULES: Rule[] = [
     id: 'WEBSHELL-005', name: '一句话木马', category: 'WebShell', severity: 'critical',
     patterns: [
       /\<\?php\s*\$\w+\s*=\s*\$_(GET|POST|REQUEST)/i,   // <?php $x=$_POST
-      /\$\w+\s*\(\s*\$\w+\s*\.\s*\$\w+\s*\)/,            // $a($b.$c) pattern
+      /\$\w+\s*\(\s*\$_(GET|POST|REQUEST)\s*\[/i,        // $func($_POST[
       /\$\{param\[/i,                                    // ${param[ (JSP)
     ],
     description: '检测到一句话木马',
