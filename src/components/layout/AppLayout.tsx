@@ -423,13 +423,32 @@ export function AppLayout() {
       getStore().setPreprocessStatus('analyzing')
       await showLocalAnalysisPhase3(progressStore, allLines.length, getStatus)
 
-      // 在 Worker 中运行规则引擎（不阻塞 UI）
-      const { promise: workerPromise } = runAnalysisInWorker(
-        allLines,
-        getCustomRules(),
-        (msg) => getStore().addLocalProgress(msg),
-      )
-      const { result, botStats, ips } = await workerPromise
+      // 尝试在 Worker 中运行规则引擎（不阻塞 UI）
+      let result: RuleAnalysisResult
+      let botStats: import('@/core/bot-detector').BotStat[]
+      let ips: string[]
+
+      try {
+        const { promise: workerPromise } = runAnalysisInWorker(
+          allLines,
+          getCustomRules(),
+          (msg) => getStore().addLocalProgress(msg),
+        )
+        const workerResult = await workerPromise
+        result = workerResult.result
+        botStats = workerResult.botStats
+        ips = workerResult.ips
+      } catch {
+        // Worker 失败时回退到主线程同步分析
+        getStore().addLocalProgress('[回退] Worker 不可用，使用主线程分析...')
+        const { analyzeWithRules } = await import('@/core/rule-engine')
+        result = analyzeWithRules(allLines, (msg) => getStore().addLocalProgress(msg), getCustomRules())
+        const suspiciousLines = result.matches.map(m => m.line)
+        const { detectBots } = await import('@/core/bot-detector')
+        botStats = detectBots(suspiciousLines)
+        const { extractIPsFromLines } = await import('@/core/geoip')
+        ips = extractIPsFromLines(suspiciousLines)
+      }
 
       const elapsed = useAnalysisStore.getState().localElapsedTime
       await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
