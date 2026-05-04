@@ -6,6 +6,7 @@ import * as topojson from 'topojson-client'
 import worldMapTopoData from '@/data/world-110m.json'
 
 let registered = false
+let lastAttempt = 0
 
 // ===== 反子午线裁剪 =====
 // 当多边形跨越 ±180° 经度线时，ECharts 会画一条横贯地图的线
@@ -93,20 +94,28 @@ function clipGeoJSON(geojson: any): any {
 // ===== 地图注册 =====
 
 export function ensureWorldMap(): boolean {
+  // 如果已经注册或 ECharts 已包含该地图，视为准备就绪
   if (registered) return true
   try {
-    let geoData = topojson.feature(
-      worldMapTopoData as any,
+    if (echarts.getMap && echarts.getMap('world')) {
+      registered = true
+      return true
+    }
+
+    const geoData = topojson.feature(
+      (worldMapTopoData as any) as any,
       (worldMapTopoData as any).objects.countries
     )
     // 裁剪反子午线跨越
-    geoData = clipGeoJSON(geoData)
-    echarts.registerMap('world', geoData as any)
+    const clipped = clipGeoJSON(geoData)
+    echarts.registerMap('world', clipped as any)
     registered = true
     return true
   } catch (e) {
-    console.warn('Failed to register world map:', e)
-    registered = true
+    // 不要把 registered 置为 true（之前的 bug 导致后续不再重试）
+    registered = false
+    lastAttempt = Date.now()
+    console.warn('Failed to register world map (will retry on next render):', e)
     return false
   }
 }

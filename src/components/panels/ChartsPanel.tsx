@@ -18,8 +18,8 @@ export function ChartsPanel() {
   const fontSizes = useConfigStore(s => s.config.fontSizes)
   const scale = fontSizes.charts / 12
 
-  // 确保世界地图已注册
-  ensureWorldMap()
+  // 确保世界地图已注册（返回是否准备好）
+  const mapReady = ensureWorldMap()
 
   // 合并两份报告的数据
   const chartData = useMemo(() => {
@@ -221,7 +221,7 @@ export function ChartsPanel() {
     return generateMapScatterData(geoIPResults, ipCounts).slice(0, 100)
   }, [geoIPResults, localRuleResult])
 
-  const worldMapOption = hasGeoData ? {
+  const worldMapOption = (hasGeoData && mapReady) ? {
     ...baseOption,
     title: {
       text: '攻击来源地理分布',
