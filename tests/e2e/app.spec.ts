@@ -19,6 +19,7 @@ test.beforeEach(async ({ page }) => {
             version: '1.1',
             config: {
               showWelcome: false,
+              diagnosticsEnabled: true,
             },
           }
           return { success: true, data: btoa(JSON.stringify(payload)) }
@@ -49,7 +50,12 @@ test.beforeEach(async ({ page }) => {
       secureDecryptSecret: async (payload: string) => ({ success: true, data: atob(payload.replace('safeStorage:', '')) }),
       secureStorageAvailable: async () => true,
       platform: 'linux',
-      httpRequest: async () => ({ success: false, error: 'mock' }),
+      httpRequest: async (url: string) => {
+        if (url.includes('paste.rs')) {
+          return { success: true, status: 200, data: 'https://paste.rs/mock-diagnostics-url' }
+        }
+        return { success: false, error: 'mock' }
+      },
       geoipLookup: async () => ({ success: true, results: {} }),
       emailSend: async () => ({ success: true }),
       showDesktopNotification: async () => {},
@@ -84,4 +90,13 @@ test('home page opens settings and exports diagnostics', async ({ page }) => {
   await page.getByRole('button', { name: '导出诊断' }).click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toContain('zhidun-diagnostics')
+})
+
+test('home page uploads diagnostics from settings', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '设置' }).click()
+  await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
+
+  await page.getByRole('button', { name: '上传诊断' }).click()
+  await expect(page.getByText('上传成功：https://paste.rs/mock-diagnostics-url')).toBeVisible()
 })

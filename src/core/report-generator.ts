@@ -1,6 +1,6 @@
 // 报告生成器 - DOCX + PDF 导出
 
-import { Document, Packer, Paragraph, HeadingLevel, TextRun, AlignmentType, PageBreak, BorderStyle, TabStopPosition, TabStopType } from 'docx'
+import { Document, Packer, Paragraph, HeadingLevel, TextRun, AlignmentType, PageBreak, BorderStyle } from 'docx'
 import { saveAs } from 'file-saver'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
@@ -18,9 +18,21 @@ function getAvailableCJKFont(): string {
 // ==================== 报告文本解析 ====================
 
 interface ReportLine {
-  type: 'main-title' | 'numbered-title' | 'bullet' | 'sub-item' | 'risk-line' | 'plain' | 'empty'
+  type: 'main-title' | 'heading' | 'numbered-title' | 'bullet' | 'ordered-item' | 'task-item' | 'sub-item' | 'risk-line' | 'blockquote' | 'table-row' | 'rule' | 'plain' | 'empty'
   content: string
   raw: string
+  level?: number
+  checked?: boolean
+}
+
+function stripMarkdownFormatting(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/__(.*?)__/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .trim()
 }
 
 function parseReportLines(text: string): ReportLine[] {
@@ -28,29 +40,70 @@ function parseReportLines(text: string): ReportLine[] {
     const stripped = line.trim()
     if (!stripped) return { type: 'empty' as const, content: '', raw: line }
 
+    if (/^```/.test(stripped)) {
+      return { type: 'rule' as const, content: stripped, raw: line }
+    }
+
+    if (/^[-*_]{3,}$/.test(stripped)) {
+      return { type: 'rule' as const, content: stripped, raw: line }
+    }
+
+    const headingMatch = stripped.match(/^(#{1,6})\s+(.+)$/)
+    if (headingMatch) {
+      return {
+        type: 'heading' as const,
+        content: stripMarkdownFormatting(headingMatch[2]),
+        raw: line,
+        level: headingMatch[1].length,
+      }
+    }
+
     if (stripped.startsWith('【') && stripped.endsWith('】')) {
       return { type: 'main-title' as const, content: stripped.slice(1, -1), raw: line }
     }
 
     const titleMatch = stripped.match(/^(\d+)\.\s+(.+)/)
     if (titleMatch) {
-      return { type: 'numbered-title' as const, content: titleMatch[2].replace(/\*\*/g, ''), raw: line }
+      return { type: 'numbered-title' as const, content: stripMarkdownFormatting(titleMatch[2]), raw: line }
+    }
+
+    if (/^>\s+/.test(stripped)) {
+      return { type: 'blockquote' as const, content: stripMarkdownFormatting(stripped.replace(/^>\s+/, '')), raw: line }
+    }
+
+    if (/^\|.+\|$/.test(stripped) && stripped.includes('|')) {
+      return { type: 'table-row' as const, content: stripped, raw: line }
+    }
+
+    const taskMatch = stripped.match(/^([-*+])\s+\[( |x|X)\]\s+(.+)$/)
+    if (taskMatch) {
+      return {
+        type: 'task-item' as const,
+        content: stripMarkdownFormatting(taskMatch[3]),
+        raw: line,
+        checked: taskMatch[2].toLowerCase() === 'x',
+      }
+    }
+
+    const orderedMatch = stripped.match(/^\d+[.)]\s+(.+)$/)
+    if (orderedMatch) {
+      return { type: 'ordered-item' as const, content: stripMarkdownFormatting(orderedMatch[1]), raw: line }
     }
 
     if (/(危急|高危|中危|低危)/.test(stripped)) {
-      return { type: 'risk-line' as const, content: stripped.replace(/\*\*/g, ''), raw: line }
+      return { type: 'risk-line' as const, content: stripMarkdownFormatting(stripped), raw: line }
     }
 
-    if (stripped.startsWith('•') || stripped.startsWith('-')) {
-      return { type: 'bullet' as const, content: stripped.slice(1).trim().replace(/\*\*/g, ''), raw: line }
+    if (/^[-*+]\s+/.test(stripped)) {
+      return { type: 'bullet' as const, content: stripMarkdownFormatting(stripped.replace(/^[-*+]\s+/, '')), raw: line }
     }
 
-    if (stripped.startsWith('  -') || stripped.startsWith('  ├') || stripped.startsWith('  └') || stripped.includes('└─')) {
-      const content = stripped.replace(/^\s*[-└├│]\s*/, '').replace(/\*\*/g, '')
+    if (/^\s{2,}[-*+]\s+/.test(line) || stripped.startsWith('  -') || stripped.startsWith('  ├') || stripped.startsWith('  └') || stripped.includes('└─')) {
+      const content = stripMarkdownFormatting(stripped.replace(/^\s*[-└├│*+]\s*/, ''))
       return { type: 'sub-item' as const, content, raw: line }
     }
 
-    return { type: 'plain' as const, content: stripped.replace(/\*\*/g, ''), raw: line }
+    return { type: 'plain' as const, content: stripMarkdownFormatting(stripped), raw: line }
   })
 }
 
@@ -168,6 +221,23 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
         }))
         break
 
+      case 'heading': {
+        const headingLevel = line.level || 2
+        const headingSize = headingLevel === 1 ? 28 : headingLevel === 2 ? 24 : headingLevel === 3 ? 22 : 20
+        children.push(new Paragraph({
+          spacing: { before: 300, after: 180 },
+          ...(headingLevel <= 2 ? { pageBreakBefore: false } : {}),
+          children: [new TextRun({
+            text: line.content,
+            bold: true,
+            size: headingSize,
+            color: headingLevel <= 2 ? '0066cc' : '1a1a2e',
+            font: getAvailableCJKFont(),
+          })],
+        }))
+        break
+      }
+
       case 'numbered-title':
         children.push(new Paragraph({
           spacing: { before: 360, after: 200, line: 360 },
@@ -185,6 +255,28 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
             color: '1a1a2e',
             font: getAvailableCJKFont(),
           })],
+        }))
+        break
+
+      case 'ordered-item':
+        children.push(new Paragraph({
+          spacing: { before: 80, after: 80 },
+          indent: { left: 480 },
+          children: [
+            new TextRun({ text: '1. ', size: 20, color: '0066cc', font: getAvailableCJKFont() }),
+            new TextRun({ text: line.content, size: 20, color: '444444', font: getAvailableCJKFont() }),
+          ],
+        }))
+        break
+
+      case 'task-item':
+        children.push(new Paragraph({
+          spacing: { before: 80, after: 80 },
+          indent: { left: 480 },
+          children: [
+            new TextRun({ text: line.checked ? '☑ ' : '☐ ', size: 20, color: line.checked ? '2e7d32' : '999999', font: getAvailableCJKFont() }),
+            new TextRun({ text: line.content, size: 20, color: '444444', font: getAvailableCJKFont() }),
+          ],
         }))
         break
 
@@ -210,6 +302,29 @@ export async function exportToDocx(reportText: string, fileName: string): Promis
         }))
         break
       }
+
+      case 'blockquote':
+        children.push(new Paragraph({
+          spacing: { before: 80, after: 80 },
+          indent: { left: 480 },
+          border: {
+            left: { style: BorderStyle.SINGLE, size: 3, color: '999999', space: 8 },
+          },
+          children: [new TextRun({ text: line.content, size: 18, color: '666666', italics: true, font: getAvailableCJKFont() })],
+        }))
+        break
+
+      case 'table-row':
+        children.push(new Paragraph({
+          spacing: { before: 40, after: 40 },
+          indent: { left: 240 },
+          children: [new TextRun({ text: line.content.replace(/\|/g, '  │  '), size: 18, color: '444444', font: getAvailableCJKFont() })],
+        }))
+        break
+
+      case 'rule':
+        children.push(new Paragraph({ text: '', spacing: { before: 80, after: 80 }, border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'd9e2f0', space: 4 } } }))
+        break
 
       case 'bullet':
         children.push(new Paragraph({
@@ -294,8 +409,26 @@ function buildReportHtml(reportText: string, fileName: string): string {
         bodyHtml += `<h1 style="text-align:center;color:#0066cc;font-size:20px;margin:30px 0 20px;letter-spacing:2px;">${line.content}</h1>`
         break
 
+      case 'heading': {
+        const level = line.level || 2
+        const size = level === 1 ? 18 : level === 2 ? 16 : level === 3 ? 14 : 13
+        const marginTop = level <= 2 ? 24 : 16
+        const borderWidth = level <= 2 ? 4 : 2
+        const color = level <= 2 ? '#0066cc' : '#1a1a2e'
+        bodyHtml += `<h${Math.min(level + 1, 6)} style="color:${color};font-size:${size}px;margin:${marginTop}px 0 12px;padding-left:12px;border-left:${borderWidth}px solid #0066cc;">${line.content}</h${Math.min(level + 1, 6)}>`
+        break
+      }
+
       case 'numbered-title':
         bodyHtml += `<h2 style="color:#1a1a2e;font-size:16px;margin:24px 0 12px;padding-left:12px;border-left:4px solid #0066cc;">${line.content}</h2>`
+        break
+
+      case 'ordered-item':
+        bodyHtml += `<div style="margin:4px 0 4px 32px;font-size:13px;color:#444;"><span style="color:#0066cc;margin-right:6px;">1.</span>${line.content}</div>`
+        break
+
+      case 'task-item':
+        bodyHtml += `<div style="margin:4px 0 4px 32px;font-size:13px;color:#444;"><span style="color:${line.checked ? '#2e7d32' : '#999'};margin-right:6px;">${line.checked ? '☑' : '☐'}</span>${line.content}</div>`
         break
 
       case 'risk-line': {
@@ -314,6 +447,18 @@ function buildReportHtml(reportText: string, fileName: string): string {
         bodyHtml += html
         break
       }
+
+      case 'blockquote':
+        bodyHtml += `<div style="margin:6px 0 6px 24px;padding-left:10px;border-left:2px solid #bbb;font-size:13px;color:#666;font-style:italic;">${line.content}</div>`
+        break
+
+      case 'table-row':
+        bodyHtml += `<div style="margin:4px 0 4px 20px;font-size:12px;color:#444;font-family:monospace;white-space:pre-wrap;">${line.content}</div>`
+        break
+
+      case 'rule':
+        bodyHtml += '<div style="height:1px;background:linear-gradient(to right,transparent,#ccd8ea,transparent);margin:14px 0;"></div>'
+        break
 
       case 'bullet':
         bodyHtml += `<div style="margin:4px 0 4px 30px;font-size:13px;color:#444;"><span style="color:#0066cc;margin-right:6px;">&#9654;</span>${line.content}</div>`

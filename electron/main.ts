@@ -149,6 +149,7 @@ const ALLOWED_HTTP_HOSTS = [
   'sctapi.ftqq.com',
   'www.pushplus.plus',
   'api.day.app',
+  'paste.rs',
 ]
 
 // 检查是否为私有IP

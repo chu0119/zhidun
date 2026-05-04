@@ -1,8 +1,6 @@
 // 世界地图注册工具
 // 将 TopoJSON 转换为 GeoJSON，裁剪反子午线跨越，注册到 ECharts
 
-import * as echarts from 'echarts'
-import * as topojson from 'topojson-client'
 import worldMapTopoData from '@/data/world-110m.json'
 import { recordDiagnosticEvent } from '@/core/diagnostics'
 
@@ -94,22 +92,25 @@ function clipGeoJSON(geojson: any): any {
 
 // ===== 地图注册 =====
 
-export function ensureWorldMap(): boolean {
+export async function ensureWorldMap(): Promise<boolean> {
   // 如果已经注册或 ECharts 已包含该地图，视为准备就绪
   if (registered) return true
   try {
-    if (echarts.getMap && echarts.getMap('world')) {
+    const echarts = await import('echarts')
+    const topojson = await import('topojson-client')
+
+    if ((echarts as any).getMap && (echarts as any).getMap('world')) {
       registered = true
       return true
     }
 
-    const geoData = topojson.feature(
+    const geoData = (topojson as any).feature(
       (worldMapTopoData as any) as any,
       (worldMapTopoData as any).objects.countries
     )
     // 裁剪反子午线跨越
     const clipped = clipGeoJSON(geoData)
-    echarts.registerMap('world', clipped as any)
+    ;(echarts as any).registerMap('world', clipped as any)
     registered = true
     return true
   } catch (e) {

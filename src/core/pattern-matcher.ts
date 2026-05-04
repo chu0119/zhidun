@@ -1,5 +1,7 @@
 // 攻击模式匹配器 - 从 Python utils/pattern_matcher.py 移植
 
+import { buildAdaptiveCountTimelineFromLines } from './timeline-utils'
+
 // 攻击类型模式定义 (使用 i 标志代替 Python 的 (?i))
 const ATTACK_PATTERNS: Record<string, RegExp[]> = {
   SQL注入: [
@@ -180,13 +182,14 @@ export function extractFromReport(reportText: string): {
 
 // 从日志中提取 IP 统计
 export function extractIpStats(lines: string[], maxLines: number = 50000): Record<string, number> {
-  const ipPattern = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/
+  const ipPattern = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g
   const ipCounts: Record<string, number> = {}
   const sampleLines = lines.length > maxLines ? lines.slice(0, maxLines) : lines
 
   for (const line of sampleLines) {
-    const match = line.match(ipPattern)
-    if (match) {
+    let match: RegExpExecArray | null
+    ipPattern.lastIndex = 0
+    while ((match = ipPattern.exec(line)) !== null) {
       const ip = match[1]
       ipCounts[ip] = (ipCounts[ip] || 0) + 1
     }
@@ -202,24 +205,5 @@ export function extractIpStats(lines: string[], maxLines: number = 50000): Recor
 
 // 从日志中提取时间线
 export function extractTimeline(lines: string[], maxLines: number = 50000): { time: string; count: number }[] {
-  // 严格匹配 Apache 日志时间格式 [29/Apr/2026:14:30:45 +0800]
-  const timePattern = /\[(\d{2})\/\w{3}\/\d{4}:([01]\d|2[0-3]):([0-5]\d):([0-5]\d)\s/
-  const timeCounts: Record<string, number> = {}
-  const sampleLines = lines.length > maxLines ? lines.slice(0, maxLines) : lines
-
-  for (const line of sampleLines) {
-    const match = line.match(timePattern)
-    if (match) {
-      const hour = match[2] + ':00'
-      timeCounts[hour] = (timeCounts[hour] || 0) + 1
-    }
-  }
-
-  // 补全 0-23 小时（确保时间线连续）
-  const result: { time: string; count: number }[] = []
-  for (let h = 0; h < 24; h++) {
-    const key = String(h).padStart(2, '0') + ':00'
-    result.push({ time: key, count: timeCounts[key] || 0 })
-  }
-  return result
+  return buildAdaptiveCountTimelineFromLines(lines, maxLines)
 }

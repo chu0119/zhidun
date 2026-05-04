@@ -1,5 +1,6 @@
 // 图表数据提取
 
+import type { RuleAnalysisResult } from '@/core/rule-engine'
 import { extractFromReport, analyzeFromLog, extractIpStats, extractTimeline } from '@/core/pattern-matcher'
 
 export interface ChartData {
@@ -13,36 +14,67 @@ export interface ChartData {
   attackHeatmap?: { hour: number; category: string; count: number }[]
 }
 
-export function extractChartData(reportText: string, logLines: string[]): ChartData {
-  // 从日志中逐行扫描攻击类型（准确的每行计数）
-  const logStats = analyzeFromLog(logLines)
+export function extractChartData(
+  reportText: string,
+  logLines: string[],
+  analysisResult?: RuleAnalysisResult | null,
+): ChartData {
+  const hasAnalysisResult = !!analysisResult
+
+  // 优先使用本地规则引擎的结构化结果，避免图表和报告重新统计时偏差
+  const logStats = hasAnalysisResult
+    ? null
+    : analyzeFromLog(logLines)
 
   // 从报告文本中提取攻击类型（仅作补充）
   const reportStats = extractFromReport(reportText)
 
-  // 合并攻击类型：优先使用日志逐行统计（准确计数），报告仅补充日志未覆盖的类型
+  // 合并攻击类型：优先使用结构化分析结果，其次使用日志逐行统计，报告仅补充未覆盖项
   const attackMerged: Record<string, number> = {}
-  for (const [k, v] of Object.entries(logStats.attackTypes)) {
-    if (v > 0) attackMerged[k] = v
+  if (analysisResult) {
+    for (const [k, v] of Object.entries(analysisResult.categoryStats || {})) {
+      if (v > 0) attackMerged[k] = v
+    }
+  } else if (logStats) {
+    for (const [k, v] of Object.entries(logStats.attackTypes)) {
+      if (v > 0) attackMerged[k] = v
+    }
   }
-  // 报告中提到但日志逐行扫描未命中的类型，标记为 1（存在但无法精确计数）
   for (const [k, v] of Object.entries(reportStats.attackTypes)) {
     if (v > 0 && !attackMerged[k]) attackMerged[k] = v
   }
 
-  // 合并风险等级：优先使用日志逐行统计
+  // 合并风险等级：优先使用结构化分析结果，其次使用日志逐行统计
   const riskMerged: Record<string, number> = {}
-  for (const [k, v] of Object.entries(logStats.riskLevels)) {
-    if (v > 0) riskMerged[k] = v
-  }
-  if (Object.values(riskMerged).every(v => v === 0)) {
-    for (const [k, v] of Object.entries(reportStats.riskLevels)) {
+  if (analysisResult) {
+    const summary = analysisResult.summary
+    riskMerged['危急'] = summary.critical || 0
+    riskMerged['高危'] = summary.high || 0
+    riskMerged['中危'] = summary.medium || 0
+    riskMerged['低危'] = summary.low || 0
+    if ((summary.critical || summary.high || summary.medium || summary.low) === 0 && summary.info > 0) {
+      riskMerged['信息'] = summary.info
+    }
+  } else if (logStats) {
+    for (const [k, v] of Object.entries(logStats.riskLevels)) {
       if (v > 0) riskMerged[k] = v
+    }
+    if (Object.values(riskMerged).every(v => v === 0)) {
+      for (const [k, v] of Object.entries(reportStats.riskLevels)) {
+        if (v > 0) riskMerged[k] = v
+      }
     }
   }
 
-  // IP 统计
-  const ipStats = extractIpStats(logLines)
+  // IP 统计：优先使用聚合后的攻击来源统计，避免原始日志重复行导致的偏差
+  const ipStats = analysisResult?.aggregatedAlerts?.length
+    ? Object.fromEntries(
+        [...analysisResult.aggregatedAlerts]
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10)
+          .map(item => [item.sourceIP, item.count]),
+      )
+    : extractIpStats(logLines)
 
   // 时间线
   const timeline = extractTimeline(logLines)

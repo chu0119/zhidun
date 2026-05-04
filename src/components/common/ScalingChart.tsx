@@ -2,7 +2,6 @@
 // 根据字体大小设置自动调整图表高度和内部字体，确保缩放后图表完全自适应
 
 import React, { useRef, useEffect, useMemo, type CSSProperties } from 'react'
-import ReactECharts from 'echarts-for-react'
 import { useConfigStore } from '@/stores/config-store'
 
 interface ScalingChartProps {
@@ -50,7 +49,8 @@ export function ScalingChart({
   lazyUpdate = true,
   scaleFonts = true,
 }: ScalingChartProps) {
-  const chartRef = useRef<ReactECharts>(null)
+  const chartRef = useRef<any>(null)
+  const ReactEChartsLazy = React.lazy(() => import('echarts-for-react'))
   const scale = useConfigStore(s => s.config.fontSizes.panels / 13)
   const skipNextResize = useRef(true)
   const timerRef = useRef<ReturnType<typeof setTimeout>>()
@@ -95,13 +95,15 @@ export function ScalingChart({
   const scaledHeight = Math.round(baseHeight * scale)
 
   return (
-    <ReactECharts
-      ref={chartRef}
-      option={scaledOption}
-      notMerge={notMerge}
-      lazyUpdate={lazyUpdate}
-      className={className}
-      style={{ height: scaledHeight, ...style }}
-    />
+    <React.Suspense fallback={<div style={{ height: scaledHeight }} />}>
+      <ReactEChartsLazy
+        ref={chartRef}
+        option={scaledOption}
+        notMerge={notMerge}
+        lazyUpdate={lazyUpdate}
+        className={className}
+        style={{ height: scaledHeight, ...style }}
+      />
+    </React.Suspense>
   )
 }

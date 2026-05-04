@@ -5,6 +5,7 @@ import { ScalingChart } from '@/components/common/ScalingChart'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useAppStore } from '@/stores/app-store'
+import { buildAdaptiveSeverityTimeline } from '@/core/timeline-utils'
 
 export function AttackPanel() {
   const ruleResult = useAnalysisStore(s => s.localRuleResult)
@@ -98,123 +99,14 @@ export function AttackPanel() {
   // 攻击时间线（按实际时间分布）
   const timelineOption = useMemo(() => {
     if (!ruleResult || ruleResult.matches.length === 0) return null
-
-    // 从日志行提取时间戳
-    const parseLogTimestamp = (line: string): number => {
-      // Apache/Nginx: 10/Oct/2024:13:55:36 +0000
-      const apacheMatch = line.match(/(\d{2})\/(\w{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})\s*([+-]\d{4})?/)
-      if (apacheMatch) {
-        const months: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
-        const d = parseInt(apacheMatch[1])
-        const m = months[apacheMatch[2]]
-        const y = parseInt(apacheMatch[3])
-        const h = parseInt(apacheMatch[4])
-        const mi = parseInt(apacheMatch[5])
-        const s = parseInt(apacheMatch[6])
-        if (m !== undefined) return new Date(y, m, d, h, mi, s).getTime()
-      }
-      // ISO/标准: 2024-10-10T13:55:36 or 2024-10-10 13:55:36
-      const isoMatch = line.match(/(\d{4})[-/](\d{2})[-/](\d{2})[T ](\d{2}):(\d{2}):(\d{2})/)
-      if (isoMatch) {
-        return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]),
-          parseInt(isoMatch[4]), parseInt(isoMatch[5]), parseInt(isoMatch[6])).getTime()
-      }
-      // Syslog: Oct 10 13:55:36
-      const syslogMatch = line.match(/(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})/)
-      if (syslogMatch) {
-        const months: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 }
-        const m = months[syslogMatch[1]]
-        if (m !== undefined) return new Date(new Date().getFullYear(), m, parseInt(syslogMatch[2]),
-          parseInt(syslogMatch[3]), parseInt(syslogMatch[4]), parseInt(syslogMatch[5])).getTime()
-      }
-      return 0
-    }
-
-    // 提取所有匹配的时间戳
-    const timedMatches = ruleResult.matches
-      .map(m => ({ ...m, ts: parseLogTimestamp(m.line) }))
-      .filter(m => m.ts > 0)
-      .sort((a, b) => a.ts - b.ts)
-
-    // 如果没有有效时间戳，回退到按行号分布
-    if (timedMatches.length === 0) {
-      const totalLines = ruleResult.totalLines
-      const buckets = 30
-      const bucketSize = Math.max(1, Math.floor(totalLines / buckets))
-      const critical = new Array(buckets).fill(0)
-      const high = new Array(buckets).fill(0)
-      const medium = new Array(buckets).fill(0)
-      const low = new Array(buckets).fill(0)
-
-      for (const match of ruleResult.matches) {
-        const bucket = Math.min(buckets - 1, Math.floor(match.lineNumber / bucketSize))
-        if (match.rule.severity === 'critical') critical[bucket]++
-        else if (match.rule.severity === 'high') high[bucket]++
-        else if (match.rule.severity === 'medium') medium[bucket]++
-        else low[bucket]++
-      }
-
-      const labels = critical.map((_, i) => `行 ${Math.round(i * bucketSize)}`)
-
-      return {
-        backgroundColor: 'transparent',
-        tooltip: { trigger: 'axis' },
-        legend: { data: ['严重', '高危', '中危', '低危'], textStyle: { color: '#999', fontSize: 10 }, top: 0 },
-        grid: { top: 30, right: 10, bottom: 30, left: 40 },
-        xAxis: { type: 'category', data: labels, axisLabel: { color: '#999', fontSize: 9 }, axisLine: { lineStyle: { color: '#333' } } },
-        yAxis: { type: 'value', axisLabel: { color: '#999', fontSize: 10 }, splitLine: { lineStyle: { color: '#222' } } },
-        series: [
-          { name: '严重', type: 'bar', stack: 'total', data: critical, itemStyle: { color: '#ff003c' }, barWidth: '60%' },
-          { name: '高危', type: 'bar', stack: 'total', data: high, itemStyle: { color: '#ff6600' } },
-          { name: '中危', type: 'bar', stack: 'total', data: medium, itemStyle: { color: '#ffaa00' } },
-          { name: '低危', type: 'bar', stack: 'total', data: low, itemStyle: { color: '#00f0ff' } },
-        ],
-      }
-    }
-
-    // 按时间范围分桶
-    const minTs = timedMatches[0].ts
-    const maxTs = timedMatches[timedMatches.length - 1].ts
-    const timeRange = maxTs - minTs
-
-    // 自动选择合适的分桶数和时间格式
-    const bucketCount = Math.min(30, Math.max(5, timedMatches.length))
-    const bucketMs = Math.max(1, timeRange / bucketCount)
-
-    // 判断时间跨度，选择合适的显示格式
-    const formatTime = (ts: number): string => {
-      const d = new Date(ts)
-      if (timeRange <= 2 * 60 * 60 * 1000) {
-        // 2小时内: 显示 HH:MM:SS
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
-      } else if (timeRange <= 24 * 60 * 60 * 1000) {
-        // 1天内: 显示 HH:MM
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-      } else if (timeRange <= 7 * 24 * 60 * 60 * 1000) {
-        // 1周内: 显示 MM-DD HH:MM
-        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-      } else {
-        // 超过1周: 显示 MM-DD
-        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      }
-    }
-
-    // 初始化桶
-    const critical = new Array(bucketCount).fill(0)
-    const high = new Array(bucketCount).fill(0)
-    const medium = new Array(bucketCount).fill(0)
-    const low = new Array(bucketCount).fill(0)
-
-    for (const match of timedMatches) {
-      const bucket = Math.min(bucketCount - 1, Math.floor((match.ts - minTs) / bucketMs))
-      if (match.rule.severity === 'critical') critical[bucket]++
-      else if (match.rule.severity === 'high') high[bucket]++
-      else if (match.rule.severity === 'medium') medium[bucket]++
-      else low[bucket]++
-    }
-
-    // 生成时间标签
-    const labels = critical.map((_, i) => formatTime(minTs + i * bucketMs + bucketMs / 2))
+    const timeline = buildAdaptiveSeverityTimeline(
+      ruleResult.matches.map(match => ({
+        line: match.line,
+        lineNumber: match.lineNumber,
+        severity: match.rule.severity,
+      })),
+      ruleResult.totalLines,
+    )
 
     return {
       backgroundColor: 'transparent',
@@ -239,11 +131,15 @@ export function AttackPanel() {
         textStyle: { color: '#999', fontSize: 10 },
         top: 0,
       },
-      grid: { top: 30, right: 10, bottom: 40, left: 40 },
+      dataZoom: timeline.labels.length > 12 ? [
+        { type: 'slider', show: true, height: 16, bottom: 8, start: 0, end: Math.min(100, Math.round(12 / timeline.labels.length * 100)) },
+        { type: 'inside' },
+      ] : undefined,
+      grid: { top: 30, right: 10, bottom: timeline.labels.length > 12 ? 64 : 40, left: 40 },
       xAxis: {
         type: 'category',
-        data: labels,
-        axisLabel: { color: '#999', fontSize: 9, rotate: 30 },
+        data: timeline.labels,
+        axisLabel: { color: '#999', fontSize: 9, rotate: timeline.labels.length > 10 ? 30 : 0 },
         axisLine: { lineStyle: { color: '#333' } },
       },
       yAxis: {
@@ -253,10 +149,10 @@ export function AttackPanel() {
         minInterval: 1,
       },
       series: [
-        { name: '严重', type: 'bar', stack: 'total', data: critical, itemStyle: { color: '#ff003c' }, barWidth: '60%' },
-        { name: '高危', type: 'bar', stack: 'total', data: high, itemStyle: { color: '#ff6600' } },
-        { name: '中危', type: 'bar', stack: 'total', data: medium, itemStyle: { color: '#ffaa00' } },
-        { name: '低危', type: 'bar', stack: 'total', data: low, itemStyle: { color: '#00f0ff' } },
+        { name: '严重', type: 'bar', stack: 'total', data: timeline.critical, itemStyle: { color: '#ff003c' }, barWidth: '60%' },
+        { name: '高危', type: 'bar', stack: 'total', data: timeline.high, itemStyle: { color: '#ff6600' } },
+        { name: '中危', type: 'bar', stack: 'total', data: timeline.medium, itemStyle: { color: '#ffaa00' } },
+        { name: '低危', type: 'bar', stack: 'total', data: timeline.low, itemStyle: { color: '#00f0ff' } },
       ],
     }
   }, [ruleResult])

@@ -27,6 +27,7 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
+  const canClose = state !== 'downloading'
 
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`
@@ -46,6 +47,9 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
 
     const cleanup = window.electronAPI.onUpdateEvent((event: string, data?: any) => {
       switch (event) {
+        case 'update:checking':
+          setState('checking')
+          break
         case 'update:available':
           setState('available')
           setUpdateInfo(data as UpdateInfo)
@@ -115,7 +119,9 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}>
+      onClick={() => {
+        if (canClose) onClose()
+      }}>
       <div className="glass-card w-[480px] max-h-[80vh] overflow-y-auto p-6"
         onClick={e => e.stopPropagation()}>
         {/* 标题 */}
@@ -124,7 +130,9 @@ export function UpdateDialog({ open, onClose }: UpdateDialogProps) {
             检查更新
           </h2>
           <button onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded hover:bg-white/10 transition-colors">
+            disabled={!canClose}
+            title={canClose ? '关闭' : '下载进行中，暂不可关闭'}
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             <svg width="16" height="16" viewBox="0 0 24 24" stroke="var(--text-secondary)" strokeWidth="2" fill="none">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />

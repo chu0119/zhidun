@@ -52,6 +52,7 @@ const DEFAULT_CONFIG: AppConfig = {
   windowWidth: 1400,
   windowHeight: 900,
   showWelcome: true,
+  diagnosticsEnabled: false,
   ruleEngineConfig: DEFAULT_RULE_ENGINE_CONFIG,
 }
 

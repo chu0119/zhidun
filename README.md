@@ -15,7 +15,7 @@
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.12.2-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.12.5-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -113,6 +113,8 @@ DOCX Word 模板<br/>PDF 完美中文渲染<br/>一键导出，即用即发
 - **7 种赛博朋克主题** — Cyber 青 / 能量紫 / 矩阵绿 ...
 - **字体大小可调** — 独立控制日志/报告/图表/面板字号
 - **图表自适应** — 字体缩放时图表自动调整尺寸和坐标
+- **自动检查更新** — 支持一键检查、下载并重启安装更新
+- **诊断导出与上传** — 需显式授权，支持脱敏后上传诊断快照
 - **跨平台支持** — Windows / macOS / Linux 全平台覆盖
 
 </td>

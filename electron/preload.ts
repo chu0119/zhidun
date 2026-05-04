@@ -85,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installUpdate: () => ipcRenderer.invoke('update:install'),
   getUpdateVersion: () => ipcRenderer.invoke('update:getVersion'),
   onUpdateEvent: (callback: (event: string, data?: any) => void) => {
-    const channels = ['update:available', 'update:not-available', 'update:error', 'update:download-progress', 'update:downloaded']
+    const channels = ['update:checking', 'update:available', 'update:not-available', 'update:error', 'update:download-progress', 'update:downloaded']
     const handlers = channels.map(channel => {
       const handler = (_event: any, data?: any) => callback(channel, data)
       ipcRenderer.on(channel, handler)

@@ -5,18 +5,22 @@ import { ScalingChart } from '@/components/common/ScalingChart'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useThemeStore } from '@/stores/theme-store'
 import { useAppStore } from '@/stores/app-store'
-import { extractIPsFromLines, lookupIPs } from '@/core/geoip'
+import { extractIPsFromLines, lookupIPs, generateMapScatterData } from '@/core/geoip'
 import { ensureWorldMap, alpha2ToGeoName, geoNameToChinese } from '@/core/world-map'
+import { recordDiagnosticEvent } from '@/core/diagnostics'
 
 export function GeoPanel() {
   const logLines = useAnalysisStore(s => s.logLines)
   const geoResults = useAnalysisStore(s => s.geoIPResults)
+  const localRuleResult = useAnalysisStore(s => s.localRuleResult)
   const currentFile = useAnalysisStore(s => s.currentFile)
   const preprocessStatus = useAnalysisStore(s => s.preprocessStatus)
   const cyberTheme = useThemeStore(s => s.currentTheme)
   const triggerAnalysis = useAppStore(s => s.localAnalysisTrigger)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mapReady, setMapReady] = useState(false)
+  const [retryingMap, setRetryingMap] = useState(false)
 
   const accentColor = useMemo(() =>
     cyberTheme === 'cyber' ? '#00f0ff'
@@ -25,8 +29,44 @@ export function GeoPanel() {
     : '#ff003c',
   [cyberTheme])
 
-  // 确保世界地图已注册
-  ensureWorldMap()
+  useEffect(() => {
+    let cancelled = false
+    Promise.resolve(ensureWorldMap()).then(ok => {
+      if (!cancelled) {
+        setMapReady(!!ok)
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setMapReady(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleRetryMap = useCallback(async () => {
+    setRetryingMap(true)
+    try {
+      recordDiagnosticEvent('ui', 'geo_panel_world_map_retry', { when: new Date().toISOString() })
+      const ok = await Promise.resolve(ensureWorldMap())
+      setMapReady(!!ok)
+      recordDiagnosticEvent('ui', ok ? 'geo_panel_world_map_retry_success' : 'geo_panel_world_map_retry_failed', {
+        when: new Date().toISOString(),
+      })
+    } catch (err) {
+      setMapReady(false)
+      try {
+        recordDiagnosticEvent('ui', 'geo_panel_world_map_retry_error', {
+          error: (err as any)?.message || String(err),
+          when: new Date().toISOString(),
+        })
+      } catch {}
+    } finally {
+      setRetryingMap(false)
+    }
+  }, [])
 
   // 如果没有 GeoIP 结果，尝试自动查询
   const doGeoLookup = useCallback(async () => {
@@ -70,39 +110,73 @@ export function GeoPanel() {
   // 统计国家/地区分布
   const countryStats = useMemo(() => {
     if (geoArray.length === 0) return []
+
+    const ipAttackCounts = new Map<string, number>()
+    if (localRuleResult?.aggregatedAlerts?.length) {
+      for (const alert of localRuleResult.aggregatedAlerts) {
+        ipAttackCounts.set(alert.sourceIP, (ipAttackCounts.get(alert.sourceIP) || 0) + alert.count)
+      }
+    } else {
+      for (const geo of geoArray) {
+        ipAttackCounts.set(geo.ip, 1)
+      }
+    }
+
     const counts: Record<string, number> = {}
     for (const geo of geoArray) {
-      const country = geo.country || '未知'
-      counts[country] = (counts[country] || 0) + 1
+      const geoName = alpha2ToGeoName(geo.countryCode) || geo.country || '未知'
+      const attackCount = ipAttackCounts.get(geo.ip) || 1
+      counts[geoName] = (counts[geoName] || 0) + attackCount
     }
+
     return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name: geoNameToChinese(name), value }))
+      .sort((a, b) => b.value - a.value)
       .slice(0, 20)
-  }, [geoArray])
+  }, [geoArray, localRuleResult])
 
   // 按国家聚合攻击数（用于地图热力渲染，使用 GeoJSON 英文名称匹配）
   const countryAttackMap = useMemo(() => {
     const map: Record<string, number> = {}
+    const ipAttackCounts = new Map<string, number>()
+
+    if (localRuleResult?.aggregatedAlerts?.length) {
+      for (const alert of localRuleResult.aggregatedAlerts) {
+        ipAttackCounts.set(alert.sourceIP, (ipAttackCounts.get(alert.sourceIP) || 0) + alert.count)
+      }
+    } else {
+      for (const geo of geoArray) {
+        ipAttackCounts.set(geo.ip, 1)
+      }
+    }
+
     for (const geo of geoArray) {
       const geoName = alpha2ToGeoName(geo.countryCode) || geo.country || '未知'
-      map[geoName] = (map[geoName] || 0) + 1
+      const attackCount = ipAttackCounts.get(geo.ip) || 1
+      map[geoName] = (map[geoName] || 0) + attackCount
     }
     return map
-  }, [geoArray])
+  }, [geoArray, localRuleResult])
 
   // 地图数据
   const mapOption = useMemo(() => {
+    if (!mapReady) return null
     if (geoArray.length === 0) return null
 
-    const scatterData = geoArray
-      .filter(g => g.lat != null && g.lon != null)
+    const ipAttackCounts = new Map<string, number>()
+    if (localRuleResult?.aggregatedAlerts?.length) {
+      for (const alert of localRuleResult.aggregatedAlerts) {
+        ipAttackCounts.set(alert.sourceIP, (ipAttackCounts.get(alert.sourceIP) || 0) + alert.count)
+      }
+    } else {
+      for (const geo of geoArray) {
+        ipAttackCounts.set(geo.ip, 1)
+      }
+    }
+
+    const scatterData = generateMapScatterData(geoResults!, ipAttackCounts)
+      .filter(g => Number.isFinite(g.value[0]) && Number.isFinite(g.value[1]))
       .slice(0, 50)
-      .map(g => ({
-        name: g.ip,
-        value: [g.lon, g.lat, 1],
-        country: g.country,
-        city: g.city,
-      }))
 
     if (scatterData.length === 0) return null
 
@@ -183,7 +257,7 @@ export function GeoPanel() {
         },
       ],
     }
-  }, [geoArray, accentColor, countryAttackMap])
+  }, [geoArray, accentColor, countryAttackMap, mapReady])
 
   // 国家分布柱状图
   const countryBarOption = useMemo(() => {
@@ -201,13 +275,13 @@ export function GeoPanel() {
       },
       yAxis: {
         type: 'category',
-        data: top15.map(([name]) => name).reverse(),
+        data: top15.map(item => item.name).reverse(),
         axisLabel: { color: '#ccc', fontSize: 11 },
         axisLine: { lineStyle: { color: '#333' } },
       },
       series: [{
         type: 'bar',
-        data: top15.map(([_, count]) => count).reverse(),
+        data: top15.map(item => item.value).reverse(),
         barWidth: '60%',
         itemStyle: {
           borderRadius: [0, 4, 4, 0],
@@ -256,6 +330,17 @@ export function GeoPanel() {
         </div>
         {mapOption ? (
           <ScalingChart option={mapOption} baseHeight={550} />
+        ) : (!mapReady && geoArray.length > 0) ? (
+          <div className="flex flex-col items-center justify-center h-[400px] text-[var(--text-dim)] text-sm gap-3">
+            <div>地图加载失败，尚未完成世界地图注册</div>
+            <button
+              onClick={handleRetryMap}
+              disabled={retryingMap}
+              className="neon-button px-3 py-1 text-sm"
+            >
+              {retryingMap ? '重试中...' : '重试加载地图'}
+            </button>
+          </div>
         ) : (
           <div className="flex items-center justify-center h-[400px] text-[var(--text-dim)] text-sm">
             {loading ? '正在查询 IP 地理位置...' : error || (geoArray.length > 0 ? '无有效地理坐标数据' : '暂无地理数据')}

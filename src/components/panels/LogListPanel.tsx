@@ -1,6 +1,6 @@
 // 日志列表面板 - 虚拟滚动日志行显示、过滤、高亮
 
-import React, { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useAnalysisStore } from '@/stores/analysis-store'
 
 export function LogListPanel() {
@@ -9,13 +9,22 @@ export function LogListPanel() {
   const [filter, setFilter] = useState('')
   const [severityFilter, setSeverityFilter] = useState<string>('all')
   const [showAttacksOnly, setShowAttacksOnly] = useState(false)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(400)
+
+  const rowHeight = 26
+  const overscan = 15
 
   // 构建攻击行号集合
   const attackLines = useMemo(() => {
     if (!ruleResult) return new Map<number, string>()
     const map = new Map<number, string>()
+    const severityRank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 }
     for (const match of ruleResult.matches) {
-      map.set(match.lineNumber, match.rule.severity)
+      const current = map.get(match.lineNumber)
+      if (!current || severityRank[match.rule.severity] > severityRank[current]) {
+        map.set(match.lineNumber, match.rule.severity)
+      }
     }
     return map
   }, [ruleResult])
@@ -42,6 +51,24 @@ export function LogListPanel() {
 
     return lines
   }, [logLines, filter, severityFilter, showAttacksOnly, attackLines])
+
+  useEffect(() => {
+    setScrollTop(0)
+  }, [filter, severityFilter, showAttacksOnly, logLines.length])
+
+  const visibleRange = useMemo(() => {
+    const total = filteredLines.length
+    const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
+    const visibleCount = Math.ceil(viewportHeight / rowHeight) + overscan * 2
+    const endIndex = Math.min(total, startIndex + visibleCount)
+    return {
+      startIndex,
+      endIndex,
+      topPadding: startIndex * rowHeight,
+      bottomPadding: Math.max(0, (total - endIndex) * rowHeight),
+      visibleItems: filteredLines.slice(startIndex, endIndex),
+    }
+  }, [filteredLines, scrollTop, viewportHeight])
 
   const getSeverityColor = (sev: string) => {
     switch (sev) {
@@ -108,18 +135,26 @@ export function LogListPanel() {
       </div>
 
       {/* 日志行列表 */}
-      <div className="flex-1 overflow-y-auto font-mono text-xs leading-5 bg-[var(--bg-primary)] rounded-lg border border-[var(--border-color)]">
+      <div
+        className="flex-1 overflow-y-auto font-mono text-xs leading-5 bg-[var(--bg-primary)] rounded-lg border border-[var(--border-color)]"
+        onScroll={e => {
+          setScrollTop(e.currentTarget.scrollTop)
+          setViewportHeight(e.currentTarget.clientHeight)
+        }}
+      >
         {filteredLines.length === 0 ? (
           <div className="flex items-center justify-center h-full text-[var(--text-dim)]">
             无匹配的日志行
           </div>
         ) : (
           <div className="p-2">
-            {filteredLines.map(({ line, lineNumber }) => {
+            <div style={{ height: `${visibleRange.topPadding}px` }} />
+            {visibleRange.visibleItems.map(({ line, lineNumber }) => {
               const sev = attackLines.get(lineNumber)
               return (
                 <div key={lineNumber}
-                  className={`flex items-start gap-2 py-0.5 px-2 rounded hover:bg-white/5 ${sev ? 'bg-[var(--accent-primary)]/5' : ''}`}>
+                  className={`flex items-start gap-2 py-0.5 px-2 rounded hover:bg-white/5 ${sev ? 'bg-[var(--accent-primary)]/5' : ''}`}
+                  style={{ minHeight: `${rowHeight}px` }}>
                   <span className="text-[var(--text-dim)] w-12 text-right shrink-0 select-none">{lineNumber}</span>
                   {sev && (
                     <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
@@ -131,6 +166,7 @@ export function LogListPanel() {
                 </div>
               )
             })}
+            <div style={{ height: `${visibleRange.bottomPadding}px` }} />
           </div>
         )}
       </div>

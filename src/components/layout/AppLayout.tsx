@@ -6,7 +6,7 @@ import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { AnalysisPanel } from '../panels/AnalysisPanel'
 import { ReportPanel } from '../panels/ReportPanel'
-import { ChartsPanel } from '../panels/ChartsPanel'
+const ChartsPanel = React.lazy(() => import('../panels/ChartsPanel').then(m => ({ default: m.ChartsPanel })))
 import { PathAnalysisPanel } from '../panels/PathAnalysisPanel'
 import { GeoPanel } from '../panels/GeoPanel'
 import { ThreatPanel } from '../panels/ThreatPanel'
@@ -27,10 +27,9 @@ import { useAppStore } from '@/stores/app-store'
 import { createAIProvider } from '@/ai-providers'
 import { LogAnalyzer, estimateTokens } from '@/core/analyzer'
 import { globalPerformanceTracker, checkPerformanceIssues } from '@/core/performance-tracker'
-import { recordDiagnosticEvent } from '@/core/diagnostics'
+import { recordDiagnosticEvent, setDiagnosticCollectionEnabled } from '@/core/diagnostics'
 import { LogParser } from '@/core/log-parser'
 import { compressLogForAI, smartSample } from '@/core/log-processor'
-import { exportToDocx, exportToPdf } from '@/core/report-generator'
 import { deduplicateMatches } from '@/core/rule-engine'
 import type { RuleMatch, RuleAnalysisResult } from '@/core/rule-engine'
 import { extractIPsFromLines, lookupIPs } from '@/core/geoip'
@@ -302,6 +301,11 @@ export function AppLayout() {
     initSoundListener()
   }, [])
 
+  // 诊断采集开关（默认关闭，用户显式授权后开启）
+  useEffect(() => {
+    setDiagnosticCollectionEnabled(!!config.diagnosticsEnabled)
+  }, [config.diagnosticsEnabled])
+
   // 转换自定义规则为规则引擎格式
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const getCustomRules = useCallback((): Rule[] => {
@@ -567,9 +571,7 @@ export function AppLayout() {
         const { analyzeWithRules } = await import('@/core/rule-engine')
         result = analyzeWithRules(allLines, (msg) => getStore().addLocalProgress(msg), getCustomRules(), ruleEngineConfig)
         const suspiciousLines = result.matches.map(m => m.line)
-        const { detectBots } = await import('@/core/bot-detector')
         botStats = detectBots(suspiciousLines)
-        const { extractIPsFromLines } = await import('@/core/geoip')
         ips = extractIPsFromLines(suspiciousLines)
       }
 
@@ -954,6 +956,7 @@ export function AppLayout() {
     if (!text) return
 
     try {
+      const { exportToDocx, exportToPdf } = await import('@/core/report-generator')
       if (format === 'pdf') {
         await exportToPdf(text, currentFile || 'report')
       } else {
@@ -1173,6 +1176,10 @@ export function AppLayout() {
         className="px-3 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors rounded hover:bg-white/5">
         历史
       </button>
+      <button onClick={() => setShowUpdate(true)}
+        className="px-3 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors rounded hover:bg-white/5">
+        检查更新
+      </button>
       <button onClick={() => setShowAlertHistory(true)}
         className="px-3 py-1 text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors rounded hover:bg-white/5 relative">
         告警
@@ -1234,7 +1241,13 @@ export function AppLayout() {
             <div style={{ display: activeTab === 'threat' ? 'contents' : 'none' }}><ThreatPanel /></div>
             <div style={{ display: activeTab === 'attack' ? 'contents' : 'none' }}><AttackPanel /></div>
             <div style={{ display: activeTab === 'session' ? 'contents' : 'none' }}><AttackSessionPanel /></div>
-            <div style={{ display: activeTab === 'charts' ? 'contents' : 'none' }}><ChartsPanel /></div>
+            <div style={{ display: activeTab === 'charts' ? 'contents' : 'none' }}>
+              {activeTab === 'charts' ? (
+                <React.Suspense fallback={<div className="h-full flex items-center justify-center">加载图表...</div>}>
+                  <ChartsPanel />
+                </React.Suspense>
+              ) : null}
+            </div>
             <div style={{ display: activeTab === 'path' ? 'contents' : 'none' }}><PathAnalysisPanel /></div>
             <div style={{ display: activeTab === 'geo' ? 'contents' : 'none' }}><GeoPanel /></div>
             <div style={{ display: activeTab === 'realtime' ? 'contents' : 'none' }}><RealtimePanel /></div>

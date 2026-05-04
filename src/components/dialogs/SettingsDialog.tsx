@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import { useConfigStore } from '@/stores/config-store'
 import { useThemeStore, ThemeName } from '@/stores/theme-store'
-import { downloadDiagnosticSnapshot } from '@/core/diagnostics'
+import { downloadDiagnosticSnapshot, isDiagnosticCollectionEnabled, uploadDiagnosticSnapshot } from '@/core/diagnostics'
 import type { RuleEngineConfig } from '@/types/config'
 
 interface SettingsDialogProps {
@@ -107,6 +107,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const { config, updateConfig } = useConfigStore()
   const { currentTheme, setTheme } = useThemeStore()
   const [tab, setTab] = useState<'general' | 'analysis' | 'appearance'>('general')
+  const [uploadingDiagnostics, setUploadingDiagnostics] = useState(false)
+  const [uploadedDiagnosticsUrl, setUploadedDiagnosticsUrl] = useState('')
+  const [diagnosticsUploadError, setDiagnosticsUploadError] = useState('')
 
   const ruleEngineConfig = config.ruleEngineConfig || {
     enabledRuleIds: [],
@@ -128,6 +131,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   }
 
   const handleExportDiagnostics = () => {
+    if (!config.diagnosticsEnabled) return
+
     downloadDiagnosticSnapshot('zhidun-diagnostics.json', {
       config: {
         ...config,
@@ -139,6 +144,38 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       theme: currentTheme,
       generatedBy: 'SettingsDialog',
     })
+  }
+
+  const handleUploadDiagnostics = async () => {
+    if (!config.diagnosticsEnabled || uploadingDiagnostics) return
+
+    setUploadingDiagnostics(true)
+    setDiagnosticsUploadError('')
+    setUploadedDiagnosticsUrl('')
+    try {
+      const result = await uploadDiagnosticSnapshot({
+        config: {
+          ...config,
+          currentModel: {
+            ...config.currentModel,
+            apiKey: config.currentModel.apiKey ? '***masked***' : '',
+          },
+        },
+        theme: currentTheme,
+        generatedBy: 'SettingsDialog.upload',
+      })
+
+      if (!result.success || !result.url) {
+        setDiagnosticsUploadError(result.error || '上传失败')
+        return
+      }
+
+      setUploadedDiagnosticsUrl(result.url)
+    } catch (err: any) {
+      setDiagnosticsUploadError(err?.message || String(err))
+    } finally {
+      setUploadingDiagnostics(false)
+    }
   }
 
   const updateRuleEngineConfig = (partial: Partial<typeof ruleEngineConfig>) => {
@@ -209,6 +246,44 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                   onChange={(e) => updateConfig({ showWelcome: e.target.checked })}
                   className="accent-[var(--accent-primary)]" />
                 <label htmlFor="showWelcome" className="text-sm text-[var(--text-secondary)]">显示启动动画</label>
+              </div>
+
+              <div className="pt-2 border-t border-[var(--border-color)]/60 space-y-2">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="diagnosticsEnabled"
+                    checked={!!config.diagnosticsEnabled}
+                    onChange={(e) => updateConfig({ diagnosticsEnabled: e.target.checked })}
+                    className="accent-[var(--accent-primary)]"
+                  />
+                  <label htmlFor="diagnosticsEnabled" className="text-sm text-[var(--text-secondary)]">
+                    允许采集诊断事件（用于问题排查）
+                  </label>
+                </div>
+                <div className="text-xs text-[var(--text-dim)]">
+                  仅在你开启后采集。可随时关闭；关闭后不再记录新事件。
+                </div>
+                {config.diagnosticsEnabled && !isDiagnosticCollectionEnabled() && (
+                  <div className="text-xs text-[var(--accent-primary)]">
+                    诊断采集将在当前页面状态同步后生效。
+                  </div>
+                )}
+                {config.diagnosticsEnabled && (
+                  <div className="text-xs text-[var(--text-dim)]">
+                    上传会先做脱敏（隐藏密钥、邮箱，IP 末段掩码），用于你主动反馈问题。
+                  </div>
+                )}
+                {!!uploadedDiagnosticsUrl && (
+                  <div className="text-xs text-[var(--accent-green)] break-all">
+                    上传成功：{uploadedDiagnosticsUrl}
+                  </div>
+                )}
+                {!!diagnosticsUploadError && (
+                  <div className="text-xs text-red-400 break-all">
+                    上传失败：{diagnosticsUploadError}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -379,8 +454,21 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
         {/* 底部按钮 */}
         <div className="flex justify-end gap-3 p-4 border-t border-[var(--border-color)]">
-          <button onClick={handleExportDiagnostics} className="neon-btn">
+          <button
+            onClick={handleExportDiagnostics}
+            disabled={!config.diagnosticsEnabled}
+            className="neon-btn disabled:opacity-40 disabled:cursor-not-allowed"
+            title={config.diagnosticsEnabled ? '导出诊断' : '请先在通用设置中启用诊断采集'}
+          >
             导出诊断
+          </button>
+          <button
+            onClick={handleUploadDiagnostics}
+            disabled={!config.diagnosticsEnabled || uploadingDiagnostics}
+            className="neon-btn disabled:opacity-40 disabled:cursor-not-allowed"
+            title={config.diagnosticsEnabled ? '上传脱敏诊断' : '请先在通用设置中启用诊断采集'}
+          >
+            {uploadingDiagnostics ? '上传中...' : '上传诊断'}
           </button>
           <button onClick={onClose} className="neon-btn">关闭</button>
         </div>

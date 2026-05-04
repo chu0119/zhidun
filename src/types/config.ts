@@ -41,6 +41,7 @@ export interface AppConfig {
   windowWidth: number
   windowHeight: number
   showWelcome: boolean
+  diagnosticsEnabled?: boolean
   preprocessConfig?: PreprocessConfig
   notificationConfig?: NotificationConfig
   realtimeNotificationConfig?: RealtimeNotificationConfig

@@ -1,12 +1,13 @@
 // 可视化图表面板
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ScalingChart } from '@/components/common/ScalingChart'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useConfigStore } from '@/stores/config-store'
 import { extractChartData } from '@/utils/chart-data'
 import { generateMapScatterData, aggregateByCountry } from '@/core/geoip'
 import { ensureWorldMap, geoNameToChinese } from '@/core/world-map'
+import { buildAdaptiveSeverityTimeline } from '@/core/timeline-utils'
 import { recordDiagnosticEvent } from '@/core/diagnostics'
 
 export function ChartsPanel() {
@@ -19,10 +20,30 @@ export function ChartsPanel() {
   const fontSizes = useConfigStore(s => s.config.fontSizes)
   const scale = fontSizes.charts / 12
 
-  // 地图就绪状态
-  const [mapReady, setMapReady] = useState<boolean>(() => !!ensureWorldMap())
+  // 地图就绪状态（避免在渲染阶段触发注册）
+  const [mapReady, setMapReady] = useState<boolean>(false)
 
   const [retrying, setRetrying] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.resolve(ensureWorldMap()).then(ok => {
+      if (!cancelled) {
+        setMapReady(!!ok)
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setMapReady(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // 图表优先使用本地预处理报告；如果没有，再回退到 AI 报告
+  const reportSourceText = localReportText || reportText
 
   const handleRetryMap = async () => {
     try {
@@ -44,12 +65,9 @@ export function ChartsPanel() {
 
   // 合并两份报告的数据
   const chartData = useMemo(() => {
-    const text = reportText || localReportText
-    if (!text) return null
-    // 合并两份报告文本以提取更全面的数据
-    const combinedText = [reportText, localReportText].filter(Boolean).join('\n')
-    return extractChartData(combinedText, logLines)
-  }, [reportText, localReportText, logLines])
+    if (!reportSourceText && logLines.length === 0) return null
+    return extractChartData(reportSourceText || '', logLines, localRuleResult)
+  }, [reportSourceText, logLines, localRuleResult])
 
   // ECharts 科技感主题
   const themeColors = ['#00f0ff', '#b400ff', '#00ff88', '#ff0040', '#ff8800', '#ffcc00', '#0088ff', '#ff00ff']
@@ -188,47 +206,71 @@ export function ChartsPanel() {
   }, [chartData?.ipStats, scale])
 
   // 时间线折线图
-  const timelineOption = {
-    ...baseOption,
-    title: {
-      text: '攻击时间线分析',
-      left: 'center',
-      top: 10,
-      textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
-    },
-    tooltip: { trigger: 'axis' },
-    grid: { left: '10%', right: '10%', bottom: '15%', top: '20%' },
-    xAxis: {
-      type: 'category',
-      data: chartData?.timeline?.map(t => t.time) || ['00:00'],
-      axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
-      axisLabel: { color: '#7a8ba8', rotate: 45 },
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
-      splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } },
-      axisLabel: { color: '#7a8ba8' },
-    },
-    series: [{
-      type: 'line',
-      smooth: true,
-      symbol: 'circle',
-      symbolSize: 6,
-      lineStyle: { color: '#00f0ff', width: 2 },
-      itemStyle: { color: '#00f0ff', borderColor: '#0a0e1a', borderWidth: 2 },
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(0, 240, 255, 0.3)' },
-            { offset: 1, color: 'rgba(0, 240, 255, 0)' },
-          ],
-        },
+  // 如果存在本地结构化规则结果，则显示按严重程度分层的时间线（可更好地呈现风险分布）
+  let timelineOption: any
+  if (localRuleResult && localRuleResult.matches && localRuleResult.matches.length > 0) {
+    const sev = buildAdaptiveSeverityTimeline(
+      localRuleResult.matches.map(m => ({ line: m.line, lineNumber: m.lineNumber || 0, severity: (m.rule && m.rule.severity) || 'low' })),
+      localRuleResult.totalLines || (localRuleResult.totalLines === 0 ? 0 : 1),
+    )
+    timelineOption = {
+      ...baseOption,
+      title: { text: '按严重程度的攻击时间线', left: 'center', top: 10, textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' } },
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['危急', '高危', '中危', '低危'], top: 40 },
+      grid: { left: '10%', right: '10%', bottom: '15%', top: '60' },
+      xAxis: { type: 'category', data: sev.labels, axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } }, axisLabel: { color: '#7a8ba8', rotate: 45 } },
+      yAxis: { type: 'value', axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } }, splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } }, axisLabel: { color: '#7a8ba8' } },
+      series: [
+        { name: '危急', type: 'line', stack: 'total', smooth: true, areaStyle: {}, data: sev.critical },
+        { name: '高危', type: 'line', stack: 'total', smooth: true, areaStyle: {}, data: sev.high },
+        { name: '中危', type: 'line', stack: 'total', smooth: true, areaStyle: {}, data: sev.medium },
+        { name: '低危', type: 'line', stack: 'total', smooth: true, areaStyle: {}, data: sev.low },
+      ],
+    }
+  } else {
+    timelineOption = {
+      ...baseOption,
+      title: {
+        text: '攻击时间线分析',
+        left: 'center',
+        top: 10,
+        textStyle: { color: '#00f0ff', fontSize: Math.round(14 * scale), fontFamily: 'Orbitron' },
       },
-      data: chartData?.timeline?.map(t => t.count) || [0],
-    }],
+      tooltip: { trigger: 'axis' },
+      grid: { left: '10%', right: '10%', bottom: '15%', top: '20%' },
+      xAxis: {
+        type: 'category',
+        data: chartData?.timeline?.map(t => t.time) || ['00:00'],
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        axisLabel: { color: '#7a8ba8', rotate: 45 },
+      },
+      yAxis: {
+        type: 'value',
+        axisLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.2)' } },
+        splitLine: { lineStyle: { color: 'rgba(0, 240, 255, 0.05)' } },
+        axisLabel: { color: '#7a8ba8' },
+      },
+      series: [{
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: { color: '#00f0ff', width: 2 },
+        itemStyle: { color: '#00f0ff', borderColor: '#0a0e1a', borderWidth: 2 },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(0, 240, 255, 0.3)' },
+              { offset: 1, color: 'rgba(0, 240, 255, 0)' },
+            ],
+          },
+        },
+        data: chartData?.timeline?.map(t => t.count) || [0],
+      }],
+    }
   }
 
   // GeoIP 世界地图
@@ -543,7 +585,7 @@ export function ChartsPanel() {
     }
   }, [chartData, scale])
 
-  const hasData = reportText || localReportText
+  const hasData = reportSourceText || logLines.length > 0
   return (
     <div className="h-full overflow-y-auto">
       {!hasData ? (

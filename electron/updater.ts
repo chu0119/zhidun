@@ -44,6 +44,10 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
 
   // IPC: 手动检查更新
   ipcMain.handle('update:check', async () => {
+    // 通知渲染进程正在检查
+    try {
+      mainWindow.webContents.send('update:checking')
+    } catch {}
     try {
       const result = await autoUpdater.checkForUpdates()
       return { hasUpdate: !!result?.updateInfo }
@@ -71,4 +75,22 @@ export function setupAutoUpdater(mainWindow: BrowserWindow) {
   ipcMain.handle('update:getVersion', () => {
     return app.getVersion()
   })
+
+  // 启动时自动检查更新（仅在已打包时）并设置周期性检查
+  try {
+    if (app.isPackaged) {
+      // 延迟少量时间，避免阻塞主进程启动
+      setTimeout(() => {
+        autoUpdater.checkForUpdates().catch(() => {})
+      }, 5000)
+
+      // 每 6 小时检查一次
+      const CHECK_INTERVAL = 6 * 60 * 60 * 1000
+      setInterval(() => {
+        autoUpdater.checkForUpdates().catch(() => {})
+      }, CHECK_INTERVAL)
+    }
+  } catch (e) {
+    // 忽略任何异常
+  }
 }
