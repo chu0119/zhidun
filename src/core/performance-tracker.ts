@@ -48,14 +48,26 @@ export class PerformanceTracker {
     samplingRate: 0,
   }
 
+  private recordMemoryUsage(): void {
+    const runtime = globalThis as typeof globalThis & {
+      gc?: () => void
+      process?: { memoryUsage?: () => { heapUsed: number } }
+    }
+
+    if (typeof runtime.gc === 'function') {
+      runtime.gc()
+    }
+
+    const memoryUsage = runtime.process?.memoryUsage?.()
+    if (memoryUsage) {
+      this.metrics.finalMemoryMB = Math.round(memoryUsage.heapUsed / 1024 / 1024)
+    }
+  }
+
   start(): void {
     this.metrics.analysisStartTime = Date.now()
     // 记录起始内存
-    if (global.gc) {
-      global.gc()
-      const memUsage = process.memoryUsage()
-      this.metrics.finalMemoryMB = Math.round(memUsage.heapUsed / 1024 / 1024)
-    }
+    this.recordMemoryUsage()
   }
 
   end(): void {
@@ -63,13 +75,16 @@ export class PerformanceTracker {
     this.metrics.analysisDuration = this.metrics.analysisEndTime - this.metrics.analysisStartTime
 
     // 记录结束内存
-    if (global.gc) {
-      global.gc()
-      const memUsage = process.memoryUsage()
-      const finalMem = Math.round(memUsage.heapUsed / 1024 / 1024)
-      this.metrics.finalMemoryMB = finalMem
+    const previousMemoryMB = this.metrics.finalMemoryMB
+    this.recordMemoryUsage()
+
+    if (this.metrics.finalMemoryMB !== undefined) {
+      const finalMem = this.metrics.finalMemoryMB
       if (!this.metrics.peakMemoryMB || finalMem > this.metrics.peakMemoryMB) {
         this.metrics.peakMemoryMB = finalMem
+      }
+      if (previousMemoryMB !== undefined && finalMem < previousMemoryMB) {
+        this.metrics.peakMemoryMB = Math.max(this.metrics.peakMemoryMB ?? finalMem, previousMemoryMB)
       }
     }
   }

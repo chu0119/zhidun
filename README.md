@@ -15,7 +15,7 @@
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.12.1-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.12.2-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -464,6 +464,17 @@ ISP 运营商识别
 
 </div>
 
+### v1.12.2 (2026-05-04)
+
+**运行时兼容性修复**
+- 修复 AI 分析路径在渲染进程中访问 Node 全局对象导致的 `global is not defined` 问题
+- 将性能追踪器中的内存采集逻辑改为 `globalThis` 能力探测，避免浏览器/Electron 渲染层崩溃
+- 该修复直接提升了大文件分析与 AI 分析阶段的启动稳定性
+
+**验证结果**
+- 已通过类型检查、完整构建与 E2E 冒烟测试
+- 当前版本可正常启动、加载日志并完成分析流程
+
 ### v1.12.1 (2026-05-04)
 
 **紧急修复（Hotfix）**
@@ -477,7 +488,7 @@ ISP 运营商识别
 - 处理本地/CI 代理干扰场景，降低 Playwright webServer 可用性误判概率
 
 **说明**
-- 若你已安装 v1.12.0 且出现黑屏，请直接升级到 v1.12.1
+- 若你已安装 v1.12.1 且仍遇到 AI 分析报错，请直接升级到 v1.12.2
 
 ### v1.12.0 (2026-05-04)
 
