@@ -6,6 +6,7 @@ import { DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS, DEFAULT_API_ENDPOINTS, DEFAULT
 import { encryptApiKey, decryptApiKey } from '@/utils/encryption'
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+const SECURE_SECRET_PREFIX = 'safeStorage:'
 
 interface ConfigState {
   config: AppConfig
@@ -65,10 +66,19 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           // Decrypt API key if present
           if (loaded.currentModel?.apiKey) {
             try {
-              const machineId = await window.electronAPI.getMachineId()
-              const decrypted = await decryptApiKey(loaded.currentModel.apiKey, machineId)
-              if (decrypted) {
-                loaded.currentModel.apiKey = decrypted
+              if (loaded.currentModel.apiKey.startsWith(SECURE_SECRET_PREFIX)) {
+                const result = await window.electronAPI.secureDecryptSecret(loaded.currentModel.apiKey)
+                if (result.success && result.data) {
+                  loaded.currentModel.apiKey = result.data
+                } else {
+                  loaded.currentModel.apiKey = ''
+                }
+              } else {
+                const machineId = await window.electronAPI.getMachineId()
+                const decrypted = await decryptApiKey(loaded.currentModel.apiKey, machineId)
+                if (decrypted) {
+                  loaded.currentModel.apiKey = decrypted
+                }
               }
             } catch {
               // Keep the key as-is if decryption fails (may be plaintext)
@@ -102,10 +112,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const configToSave = { ...get().config }
       // Encrypt API key before saving
       if (configToSave.currentModel.apiKey) {
-        const machineId = await window.electronAPI.getMachineId()
-        configToSave.currentModel = {
-          ...configToSave.currentModel,
-          apiKey: await encryptApiKey(configToSave.currentModel.apiKey, machineId),
+        const secureResult = await window.electronAPI.secureEncryptSecret(configToSave.currentModel.apiKey)
+        if (secureResult.success && secureResult.data) {
+          configToSave.currentModel = {
+            ...configToSave.currentModel,
+            apiKey: secureResult.data,
+          }
+        } else {
+          const machineId = await window.electronAPI.getMachineId()
+          configToSave.currentModel = {
+            ...configToSave.currentModel,
+            apiKey: await encryptApiKey(configToSave.currentModel.apiKey, machineId),
+          }
         }
       }
       const data = JSON.stringify({ version: '1.0', config: configToSave }, null, 2)

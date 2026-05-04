@@ -41,6 +41,9 @@ interface ElectronAPI {
   getAppPath: () => Promise<string>
   getVersion: () => Promise<string>
   getMachineId: () => Promise<string>
+  secureEncryptSecret: (secret: string) => Promise<{ success: boolean; data?: string; error?: string }>
+  secureDecryptSecret: (payload: string) => Promise<{ success: boolean; data?: string; error?: string }>
+  secureStorageAvailable: () => Promise<boolean>
   emailSend: (options: { host: string; port: number; user: string; pass: string; from: string; to: string; subject: string; html: string }) => Promise<{ success: boolean; error?: string }>
   showDesktopNotification: (options: { title: string; body: string; severity: string }) => Promise<void>
   playAlertSound: (severity: string) => Promise<void>

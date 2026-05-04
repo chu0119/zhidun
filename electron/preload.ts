@@ -37,6 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppPath: () => ipcRenderer.invoke('app:getPath'),
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   getMachineId: () => ipcRenderer.invoke('app:getMachineId'),
+  secureEncryptSecret: (secret: string) => ipcRenderer.invoke('secure:encryptSecret', secret),
+  secureDecryptSecret: (payload: string) => ipcRenderer.invoke('secure:decryptSecret', payload),
+  secureStorageAvailable: () => ipcRenderer.invoke('secure:isAvailable'),
 
   // Platform
   platform: process.platform,

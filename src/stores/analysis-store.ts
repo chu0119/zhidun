@@ -156,33 +156,47 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
 
   // ---- Timer Actions ----
   startTimer: () => {
-    const { timerInterval } = get()
-    if (timerInterval) clearInterval(timerInterval)
-    const interval = setInterval(() => {
-      set(state => ({ elapsedTime: state.elapsedTime + 1 }))
-    }, 1000)
-    set({ timerInterval: interval, elapsedTime: 0 })
+    set(state => {
+      // 原子操作：先清理旧的计时器
+      if (state.timerInterval) {
+        clearInterval(state.timerInterval)
+      }
+      const interval = setInterval(() => {
+        set(s => ({ elapsedTime: s.elapsedTime + 1 }))
+      }, 1000)
+      return { timerInterval: interval, elapsedTime: 0 }
+    })
   },
 
   stopTimer: () => {
-    const { timerInterval } = get()
-    if (timerInterval) clearInterval(timerInterval)
-    set({ timerInterval: null })
+    set(state => {
+      if (state.timerInterval) {
+        clearInterval(state.timerInterval)
+      }
+      return { timerInterval: null }
+    })
   },
 
   startLocalTimer: () => {
-    const { localTimerInterval } = get()
-    if (localTimerInterval) clearInterval(localTimerInterval)
-    const interval = setInterval(() => {
-      set(state => ({ localElapsedTime: state.localElapsedTime + 1 }))
-    }, 1000)
-    set({ localTimerInterval: interval, localElapsedTime: 0 })
+    set(state => {
+      // 原子操作：先清理旧的计时器
+      if (state.localTimerInterval) {
+        clearInterval(state.localTimerInterval)
+      }
+      const interval = setInterval(() => {
+        set(s => ({ localElapsedTime: s.localElapsedTime + 1 }))
+      }, 1000)
+      return { localTimerInterval: interval, localElapsedTime: 0 }
+    })
   },
 
   stopLocalTimer: () => {
-    const { localTimerInterval } = get()
-    if (localTimerInterval) clearInterval(localTimerInterval)
-    set({ localTimerInterval: null })
+    set(state => {
+      if (state.localTimerInterval) {
+        clearInterval(state.localTimerInterval)
+      }
+      return { localTimerInterval: null }
+    })
   },
 
   clearAll: () => {

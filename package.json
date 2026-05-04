@@ -1,6 +1,6 @@
 {
   "name": "zhidun-electron",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "星川智盾 AI 网站日志安全分析工具",
   "author": {
     "name": "星川智盾安全团队",
@@ -10,9 +10,12 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/build.js",
+    "build:web": "vite build",
     "preview": "vite preview",
     "electron:dev": "vite --config vite.config.ts",
-    "electron:build": "vite build && electron-builder"
+    "electron:build": "vite build && electron-builder",
+    "benchmark:logs": "node scripts/performance-benchmark.js",
+    "test:e2e": "npm run build:web && playwright test"
   },
   "dependencies": {
     "axios": "^1.7.7",
@@ -39,6 +42,7 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/file-saver": "^2.0.7",
     "@types/nodemailer": "^8.0.0",
     "@types/papaparse": "^5.3.14",

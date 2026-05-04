@@ -26,6 +26,8 @@ import { useHistoryStore } from '@/stores/history-store'
 import { useAppStore } from '@/stores/app-store'
 import { createAIProvider } from '@/ai-providers'
 import { LogAnalyzer, estimateTokens } from '@/core/analyzer'
+import { globalPerformanceTracker, checkPerformanceIssues } from '@/core/performance-tracker'
+import { recordDiagnosticEvent } from '@/core/diagnostics'
 import { LogParser } from '@/core/log-parser'
 import { compressLogForAI, smartSample } from '@/core/log-processor'
 import { exportToDocx, exportToPdf } from '@/core/report-generator'
@@ -148,15 +150,38 @@ function runAnalysisInWorker(
   onProgress: (msg: string) => void,
   workerType: 'single' | 'batch' = 'single',
 ): { promise: Promise<{ result: RuleAnalysisResult; botStats: import('@/core/bot-detector').BotStat[]; ips: string[] }>; cancel: () => void } {
-  // 终止之前同类型的 Worker
-  const prevWorker = workerType === 'batch' ? batchWorker : analysisWorker
-  if (prevWorker) {
-    prevWorker.terminate()
+  let worker: Worker | null = null
+  let isCleanedUp = false
+
+  // 清理函数：确保Worker在所有情况下都被正确释放
+  const cleanupWorker = () => {
+    if (isCleanedUp) return
+    isCleanedUp = true
+    
+    if (worker) {
+      try {
+        worker.terminate()
+      } catch (e) {
+        console.warn('Worker 终止失败:', e)
+      }
+      worker = null
+    }
+    
     if (workerType === 'batch') batchWorker = null
     else analysisWorker = null
   }
 
-  const worker = new Worker(new URL('../../workers/analysis.worker.ts', import.meta.url), { type: 'module' })
+  // 终止之前同类型的 Worker
+  const prevWorker = workerType === 'batch' ? batchWorker : analysisWorker
+  if (prevWorker) {
+    try {
+      prevWorker.terminate()
+    } catch (e) {
+      console.warn('前一个 Worker 终止失败:', e)
+    }
+  }
+
+  worker = new Worker(new URL('../../workers/analysis.worker.ts', import.meta.url), { type: 'module' })
   if (workerType === 'batch') batchWorker = worker
   else analysisWorker = worker
 
@@ -167,42 +192,71 @@ function runAnalysisInWorker(
   }))
 
   const promise = new Promise<{ result: RuleAnalysisResult; botStats: import('@/core/bot-detector').BotStat[]; ips: string[] }>((resolve, reject) => {
-    worker.onmessage = (e) => {
-      const data = e.data
-      if (data.type === 'progress') {
-        onProgress(data.message)
-      } else if (data.type === 'result') {
-        worker.terminate()
-        if (workerType === 'batch') batchWorker = null
-        else analysisWorker = null
-        resolve({ result: data.result, botStats: data.botStats, ips: data.ips })
-      } else if (data.type === 'error') {
-        worker.terminate()
-        if (workerType === 'batch') batchWorker = null
-        else analysisWorker = null
-        reject(new Error(data.error))
+    // 使用try-finally确保cleanup
+    try {
+      worker!.onmessage = (e) => {
+        const data = e.data
+        if (data.type === 'progress') {
+          onProgress(data.message)
+        } else if (data.type === 'result') {
+          cleanupWorker()
+          resolve({ result: data.result, botStats: data.botStats, ips: data.ips })
+        } else if (data.type === 'error') {
+          cleanupWorker()
+          reject(new Error(data.error))
+        }
       }
-    }
 
-    worker.onerror = (err) => {
-      worker.terminate()
-      if (workerType === 'batch') batchWorker = null
-      else analysisWorker = null
-      reject(new Error(err.message || 'Worker 错误'))
-    }
+      worker!.onerror = (err) => {
+        cleanupWorker()
+        reject(new Error(err.message || 'Worker 错误'))
+      }
 
-    worker.postMessage({ type: 'analyze', lines, rules: serializableRules })
+      // 设置超时防止Worker无限挂起（30分钟）
+      const timeoutId = setTimeout(() => {
+        cleanupWorker()
+        reject(new Error('Worker 执行超时'))
+      }, 30 * 60 * 1000)
+
+      // 包装resolve/reject以清除超时
+      const originalResolve = resolve
+      const originalReject = reject
+      
+      const wrappedResolve = (value: any) => {
+        clearTimeout(timeoutId)
+        originalResolve(value)
+      }
+      
+      const wrappedReject = (reason: any) => {
+        clearTimeout(timeoutId)
+        originalReject(reason)
+      }
+
+      worker!.postMessage({ type: 'analyze', lines, rules: serializableRules })
+    } catch (error) {
+      cleanupWorker()
+      reject(error)
+    }
+  }).finally(() => {
+    // 如果Promise还没完成就被丢弃，进行清理
+    // 这用setTimeout以确保异步微任务队列完成后执行
+    setTimeout(() => {
+      if (!isCleanedUp) {
+        console.warn('Worker 未正确清理，执行强制清理')
+        cleanupWorker()
+      }
+    }, 100)
   })
 
   return {
     promise,
     cancel: () => {
-      worker.postMessage({ type: 'cancel' })
-      setTimeout(() => {
-        worker.terminate()
-        if (workerType === 'batch') batchWorker = null
-        else analysisWorker = null
-      }, 100)
+      try {
+        worker?.postMessage({ type: 'cancel' })
+      } catch (e) {
+        console.warn('发送 cancel 消息失败:', e)
+      }
+      cleanupWorker()
     },
   }
 }
@@ -554,6 +608,13 @@ export function AppLayout() {
     const getStatus = () => useAnalysisStore.getState().status
 
     try {
+      recordDiagnosticEvent('analysis', 'ai_start', {
+        provider: config.currentModel.provider,
+        modelName: config.currentModel.modelName,
+        totalLines: logLines.length,
+        hasPreprocessResult: !!preprocessResult,
+      })
+      globalPerformanceTracker.start()
       await showPhase1(progressStore, config.currentModel.modelName, getStatus)
 
       progressStore.addProgress('')
@@ -636,8 +697,20 @@ export function AppLayout() {
         progressStore.addProgress(`[压缩] 日志样本压缩至 ${sampleLines.length} 行`)
       }
 
+      // 尝试获取文件大小（fileSize 在预处理作用域不可见），以免在界面显示为 0
+      let fileSize = 0
+      try {
+        const fileInfo = await window.electronAPI.getFileInfo(fullPath)
+        fileSize = fileInfo.success && fileInfo.info ? fileInfo.info.size : 0
+      } catch (e) {
+        fileSize = 0
+      }
+
       const totalLines = logLines.length
       const sampledLines = sampleLines.length
+      const fileSizeMB = fileSize / (1024 * 1024)
+
+      globalPerformanceTracker.recordFileStats(fileSizeMB, sampledLines, totalLines)
 
       getStore().setMetadata({
         formatType,
@@ -646,13 +719,14 @@ export function AppLayout() {
         sampledLines,
       })
 
+      // 传入真实的文件大小和Token估算，避免在界面显示为0或未知
       await showPhase2(progressStore, {
         format: formatType,
         encoding: 'utf-8',
-        sizeMB: '0',
+        sizeMB: (fileSize / (1024 * 1024)).toFixed(2),
         totalLines,
         sampledLines,
-        tokens: 0,
+        tokens: totalTokens,
       }, getStatus)
 
       await showPhase3Pre(progressStore, config.currentModel.modelName, getStatus)
@@ -699,6 +773,25 @@ export function AppLayout() {
         sampledLines,
       }, preprocessSummary)
 
+      globalPerformanceTracker.recordTokens(summaryTokens, logTokens)
+      globalPerformanceTracker.recordAnalysisStats(totalLines, localRuleResult?.matchedLines || preprocessResult?.suspiciousLines || 0)
+      globalPerformanceTracker.end()
+
+      const performanceReport = globalPerformanceTracker.formatReport()
+      progressStore.addProgress('')
+      progressStore.addProgress('[性能] 本次分析指标:')
+      for (const line of performanceReport.split('\n').slice(1)) {
+        progressStore.addProgress(line)
+      }
+
+      const issues = checkPerformanceIssues(globalPerformanceTracker.getMetrics())
+      if (issues.length > 0) {
+        progressStore.addProgress('[性能] 发现优化建议:')
+        for (const issue of issues) {
+          progressStore.addProgress(issue)
+        }
+      }
+
       if (report) {
         await showPhase3Post(progressStore, Math.round(report.length / 1024), getStatus)
 
@@ -708,6 +801,11 @@ export function AppLayout() {
         getStore().setReportText(report)
         getStore().setStatus('done')
         getStore().setAbortController(null)
+        recordDiagnosticEvent('analysis', 'ai_complete', {
+          reportLength: report.length,
+          sampledLines,
+          totalTokens,
+        })
 
         setActiveTab('ai-report')
 
@@ -736,6 +834,10 @@ export function AppLayout() {
         progressStore.addProgress(`[提示] API 地址: ${config.currentModel.baseUrl || '(默认)'}`)
         getStore().setStatus('error')
         getStore().setError('AI 未返回有效分析结果，请检查模型配置和连接状态')
+        recordDiagnosticEvent('analysis', 'ai_empty_response', {
+          provider: config.currentModel.provider,
+          modelName: config.currentModel.modelName,
+        })
       }
     } catch (error: any) {
       if (error.name === 'AbortError') {
@@ -749,10 +851,18 @@ export function AppLayout() {
         progressStore.addProgress('[提示] 请检查：1) 模型服务是否运行中 2) API 地址是否正确 3) 模型名称是否正确')
         getStore().setStatus('error')
         getStore().setError(error.message)
+        recordDiagnosticEvent('analysis', 'ai_error', {
+          provider: config.currentModel.provider,
+          modelName: config.currentModel.modelName,
+          message: error.message || String(error),
+        })
       }
     } finally {
       getStore().stopTimer()
       getStore().setAbortController(null)
+      recordDiagnosticEvent('analysis', 'ai_finished', {
+        status: useAnalysisStore.getState().status,
+      })
     }
   }, [config])
 

@@ -5,6 +5,7 @@ import { useRealtimeStore } from '@/stores/realtime-store'
 import { useConfigStore } from '@/stores/config-store'
 import { BUILT_IN_RULES } from '@/core/rule-engine'
 import { useRealtimeNotifier } from '@/hooks/useRealtimeNotifier'
+import { recordDiagnosticEvent } from '@/core/diagnostics'
 
 type MonitorMode = 'local' | 'ssh'
 
@@ -107,6 +108,7 @@ export function RealtimePanel() {
     switch (data.type) {
       case 'connected':
         setStatus('connected')
+        recordDiagnosticEvent('realtime', 'connected', { mode, filePath })
         break
 
       case 'line': {
@@ -135,6 +137,9 @@ export function RealtimePanel() {
         })
         if (newMatches.length > 0) {
           addMatches(newMatches)
+          recordDiagnosticEvent('realtime', 'match_batch', {
+            matches: newMatches.length,
+          })
         }
         break
       }
@@ -142,11 +147,18 @@ export function RealtimePanel() {
       case 'stats': {
         const { totalLines, matchedLines, summary, categoryStats } = data.payload
         updateStats({ totalLines, matchedLines, summary, categoryStats })
+        recordDiagnosticEvent('realtime', 'stats_update', {
+          totalLines,
+          matchedLines,
+        })
         break
       }
 
       case 'error':
         setError(data.payload.message)
+        recordDiagnosticEvent('realtime', 'error', {
+          message: data.payload.message,
+        })
         break
     }
   }, [])

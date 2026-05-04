@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { useConfigStore } from '@/stores/config-store'
 import { useThemeStore, ThemeName } from '@/stores/theme-store'
+import { downloadDiagnosticSnapshot } from '@/core/diagnostics'
 
 interface SettingsDialogProps {
   open: boolean
@@ -31,6 +32,20 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
     updateConfig({ fontSizes: newFontSizes })
     document.documentElement.style.setProperty(`--font-${key}`, `${value}px`)
     document.documentElement.style.setProperty(`--font-${key}-scale`, `${value / BASE_SIZES[key]}`)
+  }
+
+  const handleExportDiagnostics = () => {
+    downloadDiagnosticSnapshot('zhidun-diagnostics.json', {
+      config: {
+        ...config,
+        currentModel: {
+          ...config.currentModel,
+          apiKey: config.currentModel.apiKey ? '***masked***' : '',
+        },
+      },
+      theme: currentTheme,
+      generatedBy: 'SettingsDialog',
+    })
   }
 
   if (!open) return null
@@ -148,6 +163,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
 
         {/* 底部按钮 */}
         <div className="flex justify-end gap-3 p-4 border-t border-[var(--border-color)]">
+          <button onClick={handleExportDiagnostics} className="neon-btn">
+            导出诊断
+          </button>
           <button onClick={onClose} className="neon-btn">关闭</button>
         </div>
       </div>

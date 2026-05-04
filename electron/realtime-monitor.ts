@@ -234,8 +234,14 @@ class LocalMonitor {
         this.processLine(line, true) // suppressMatches = true
       }
       this.flush()
-    } catch {
-      // 编码问题时忽略
+    } catch (error) {
+      // 编码问题或其他错误时发送错误信息
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      console.warn(`[${this.filePath}] readTail 错误: ${errorMsg}`)
+      this.onData({ 
+        type: 'error', 
+        payload: { message: `文件读取失败: ${errorMsg}` } 
+      })
     } finally {
       if (fd) await fd.close().catch(() => {})
     }

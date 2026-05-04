@@ -46,7 +46,11 @@ export const useAlertHistoryStore = create<AlertHistoryState>((set, get) => ({
   },
 
   saveAlerts: () => {
-    if (saveTimer) clearTimeout(saveTimer)
+    // 原子操作：清理旧的timer后再设置新的
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
     saveTimer = setTimeout(async () => {
       try {
         const appPath = await window.electronAPI.getAppPath()
@@ -55,6 +59,11 @@ export const useAlertHistoryStore = create<AlertHistoryState>((set, get) => ({
         await window.electronAPI.writeFile(filePath, data)
       } catch (error) {
         console.error('保存告警历史失败:', error)
+      } finally {
+        // 保存完成后清理timer
+        if (saveTimer !== null) {
+          saveTimer = null
+        }
       }
     }, 300)
   },

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, safeStorage } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import readline from 'readline'
@@ -10,7 +10,10 @@ import { streamAnalyze, StreamingRule } from './streaming-analyzer'
 import { startMonitor, stopMonitor, stopAllMonitors, testSSHConnection, MonitorConfig, MonitorSSHConfig } from './realtime-monitor'
 
 let mainWindow: BrowserWindow | null = null
-let streamAbortController: AbortController | null = null
+
+// 改进：使用Map管理多个并发的流式分析，避免冲突
+const streamControllers = new Map<string, AbortController>()
+const SECURE_SECRET_PREFIX = 'safeStorage:'
 
 const DIST = path.join(__dirname, '../dist')
 const PRELOAD = path.join(__dirname, './preload.js')
@@ -81,22 +84,43 @@ app.whenReady().then(() => {
 // 路径安全校验：限制在用户数据目录或临时文件目录内
 function validatePath(filePath: string, allowedDirs?: string[]): boolean {
   if (!filePath || typeof filePath !== 'string') return false
-  const normalized = path.normalize(filePath)
-  // 禁止 .. 组件（防止目录穿越）
-  if (normalized.includes('..')) return false
-  // 禁止 null 字节
-  if (normalized.includes('\x00')) return false
+  
+  try {
+    // 1. 规范化路径（必须在检查前）- 使用resolve获取绝对路径
+    const normalized = path.normalize(path.resolve(filePath))
+    
+    // 2. 检查多种绕过方式
+    if (normalized.includes('..')) return false
+    if (normalized.includes('\x00')) return false
+    if (normalized.includes('\\\\')) return false // 双反斜杠
+    if (/[<>"|?*]/.test(normalized)) return false // Windows 特殊字符
+    
+    // 3. 白名单检查（必须使用绝对路径）
+    const dirs = (allowedDirs || [
+      app.getPath('userData'),
+      app.getPath('home'),
+      app.getPath('desktop'),
+      app.getPath('documents'),
+      app.getPath('downloads'),
+      app.getPath('temp'),
+    ]).map(d => path.resolve(d))
+    
+    // 4. 使用 startsWith 检查，并确保目录边界
+    return dirs.some(dir => {
+      const dirWithSep = dir.endsWith(path.sep) ? dir : dir + path.sep
+      return normalized === dir || normalized.startsWith(dirWithSep)
+    })
+  } catch {
+    // 任何路径解析错误都视为无效路径
+    return false
+  }
+}
 
-  // 允许的目录白名单
-  const dirs = allowedDirs || [
-    app.getPath('userData'),
-    app.getPath('home'),
-    app.getPath('desktop'),
-    app.getPath('documents'),
-    app.getPath('downloads'),
-    app.getPath('temp'),
-  ]
-  return dirs.some(dir => normalized.startsWith(dir + path.sep) || normalized === dir)
+// 文件类型白名单校验
+function isAllowedFileType(filePath: string): boolean {
+  const allowedExts = ['.log', '.txt', '.csv', '.json', '.ndjson', '.jsonl', '.gz']
+  const ext = path.extname(filePath).toLowerCase()
+  return allowedExts.includes(ext)
 }
 
 // 检测是否为二进制文件（通过扩展名和魔数）
@@ -127,12 +151,104 @@ const ALLOWED_HTTP_HOSTS = [
   'api.day.app',
 ]
 
+// 检查是否为私有IP
+function isPrivateIP(hostname: string): boolean {
+  const ip = hostname.toLowerCase()
+  // 本地地址
+  if (ip === 'localhost' || ip === 'localhost.' || ip === '127.0.0.1' || ip === '::1') return true
+  // 私有IP范围
+  if (/^192\.168\./.test(ip)) return true
+  if (/^10\./.test(ip)) return true
+  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(ip)) return true
+  // IPv6 私有地址
+  if (/^fc00:/i.test(ip) || /^fd00:/i.test(ip)) return true
+  if (/^fe80:/i.test(ip)) return true
+  return false
+}
+
+// 检查是否为保留IP
+function isReservedIP(hostname: string): boolean {
+  const ip = hostname.toLowerCase()
+  if (/^169\.254\./.test(ip)) return true // 链接本地
+  if (/^224\./.test(ip)) return true // 多播
+  if (/^240\./.test(ip)) return true // 保留
+  if (ip === '255.255.255.255') return true // 广播
+  if (ip === '0.0.0.0') return true // 当前网络
+  return false
+}
+
 function isAllowedHttpHost(urlStr: string): boolean {
   try {
     const parsed = new URL(urlStr)
-    return ALLOWED_HTTP_HOSTS.some(host => parsed.hostname === host || parsed.hostname.endsWith('.' + host))
-  } catch {
+    const hostname = parsed.hostname || ''
+    
+    // 1. 检查私有IP范围
+    if (isPrivateIP(hostname)) {
+      console.warn(`SSRF防护: 拒绝私有IP访问 ${hostname}`)
+      return false
+    }
+    
+    // 2. 检查保留的特殊地址
+    if (isReservedIP(hostname)) {
+      console.warn(`SSRF防护: 拒绝保留IP访问 ${hostname}`)
+      return false
+    }
+    
+    // 3. 检查白名单
+    const isWhitelisted = ALLOWED_HTTP_HOSTS.some(
+      host => hostname === host || hostname.endsWith('.' + host)
+    )
+    if (!isWhitelisted) {
+      console.warn(`SSRF防护: 不在白名单中 ${hostname}`)
+      return false
+    }
+    
+    // 4. 检查端口（只允许标准端口）
+    const port = parsed.port ? parseInt(parsed.port) : (parsed.protocol === 'https:' ? 443 : 80)
+    if (![80, 443].includes(port)) {
+      console.warn(`SSRF防护: 不允许的端口 ${port}`)
+      return false
+    }
+    
+    // 5. 检查协议（只允许 http/https）
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      console.warn(`SSRF防护: 不允许的协议 ${parsed.protocol}`)
+      return false
+    }
+    
+    return true
+  } catch (error) {
+    console.warn(`SSRF防护: URL解析失败 ${urlStr}`, error)
     return false
+  }
+}
+
+function encryptSecretWithOsStorage(secret: string): { success: boolean; data?: string; error?: string } {
+  if (!secret) return { success: true, data: '' }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { success: false, error: '系统密钥存储不可用' }
+  }
+
+  try {
+    const encrypted = safeStorage.encryptString(secret)
+    return { success: true, data: `${SECURE_SECRET_PREFIX}${encrypted.toString('base64')}` }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+}
+
+function decryptSecretWithOsStorage(payload: string): { success: boolean; data?: string; error?: string } {
+  if (!payload) return { success: true, data: '' }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { success: false, error: '系统密钥存储不可用' }
+  }
+
+  try {
+    const raw = payload.startsWith(SECURE_SECRET_PREFIX) ? payload.slice(SECURE_SECRET_PREFIX.length) : payload
+    const decrypted = safeStorage.decryptString(Buffer.from(raw, 'base64'))
+    return { success: true, data: decrypted }
+  } catch (error: any) {
+    return { success: false, error: error.message }
   }
 }
 
@@ -209,6 +325,7 @@ function setupIPC() {
   // Read file
   ipcMain.handle('file:read', async (_, filePath: string) => {
     if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
+    if (!isAllowedFileType(filePath)) return { success: false, error: '不允许的文件类型' }
     try {
       const buffer = await fs.promises.readFile(filePath)
       return { success: true, data: buffer.toString('base64'), size: buffer.length }
@@ -220,6 +337,7 @@ function setupIPC() {
   // Read file as text with encoding detection
   ipcMain.handle('file:readText', async (_, filePath: string) => {
     if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
+    if (!isAllowedFileType(filePath)) return { success: false, error: '不允许的文件类型' }
     if (isBinaryFile(filePath)) return { success: false, error: '不支持读取二进制文件，请选择文本格式的日志文件' }
     try {
       const chardet = require('chardet')
@@ -320,35 +438,71 @@ function setupIPC() {
   })
 
   // 流式规则引擎全量扫描（大文件专用，不采样，逐行匹配）
-  ipcMain.handle('file:streamAnalyze', async (_, filePath: string, rules: StreamingRule[]) => {
+  ipcMain.handle('file:streamAnalyze', async (_, filePath: string, rules: StreamingRule[], sessionId?: string) => {
     if (!validatePath(filePath)) return { success: false, error: '无效的文件路径', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
+    if (!isAllowedFileType(filePath)) return { success: false, error: '不允许的文件类型', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
     if (isBinaryFile(filePath)) return { success: false, error: '不支持分析二进制文件', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
-    streamAbortController = new AbortController()
+    
+    // 生成或使用提供的sessionId
+    const sid = sessionId || `stream_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    
+    // 清理相同sessionId的旧controller（防止重复）
+    const oldController = streamControllers.get(sid)
+    if (oldController) {
+      try {
+        oldController.abort()
+      } catch (e) {
+        console.warn('清理旧 controller 失败:', e)
+      }
+    }
+    
+    const abortController = new AbortController()
+    streamControllers.set(sid, abortController)
+    
     try {
       const result = await streamAnalyze(filePath, rules, {
-        signal: streamAbortController.signal,
+        signal: abortController.signal,
         maxMatches: 50000,
         onProgress: (linesScanned, matchesFound) => {
           // 通过 webContents 发送进度到渲染进程
-          mainWindow?.webContents.send('stream:progress', { linesScanned, matchesFound })
+          mainWindow?.webContents.send('stream:progress', { linesScanned, matchesFound, sessionId: sid })
         },
       })
-      return result
+      return { ...result, sessionId: sid }
     } catch (error: any) {
-      if (streamAbortController?.signal.aborted) {
-        return { success: false, error: '分析已停止', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
+      if (abortController.signal.aborted) {
+        return { success: false, error: '分析已停止', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {}, sessionId: sid }
       }
-      return { success: false, error: error.message, totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
+      return { success: false, error: error.message, totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {}, sessionId: sid }
     } finally {
-      streamAbortController = null
+      // 清理controller
+      streamControllers.delete(sid)
     }
   })
 
-  // 停止流式分析
-  ipcMain.handle('stream:cancel', async () => {
-    if (streamAbortController) {
-      streamAbortController.abort()
-      streamAbortController = null
+  // 停止流式分析（支持指定sessionId）
+  ipcMain.handle('stream:cancel', async (_, sessionId?: string) => {
+    if (sessionId) {
+      // 停止指定的stream
+      const controller = streamControllers.get(sessionId)
+      if (controller) {
+        try {
+          controller.abort()
+        } catch (e) {
+          console.warn('中止 controller 失败:', e)
+        }
+        streamControllers.delete(sessionId)
+      }
+    } else {
+      // 停止所有streams
+      streamControllers.forEach((controller) => {
+        try {
+          controller.abort()
+        } catch (e) {
+          console.warn('中止 controller 失败:', e)
+        }
+      })
+      streamControllers.clear()
     }
     return { success: true }
   })
@@ -356,14 +510,20 @@ function setupIPC() {
   // Write file (atomic: write to temp file then rename)
   ipcMain.handle('file:write', async (_, filePath: string, content: string) => {
     if (!validatePath(filePath)) return { success: false, error: '无效的文件路径' }
+    const tmpPath = filePath + '.tmp.' + Date.now()
     try {
       const dir = path.dirname(filePath)
       await fs.promises.mkdir(dir, { recursive: true })
-      const tmpPath = filePath + '.tmp.' + Date.now()
       await fs.promises.writeFile(tmpPath, content, 'utf-8')
       await fs.promises.rename(tmpPath, filePath)
       return { success: true }
     } catch (error: any) {
+      // 清理临时文件
+      try {
+        await fs.promises.unlink(tmpPath)
+      } catch (cleanupError) {
+        console.warn(`清理临时文件 ${tmpPath} 失败:`, cleanupError)
+      }
       return { success: false, error: error.message }
     }
   })
@@ -415,6 +575,19 @@ function setupIPC() {
   // Get app path
   ipcMain.handle('app:getPath', () => {
     return app.getPath('userData')
+  })
+
+  // Secure secret storage helpers
+  ipcMain.handle('secure:encryptSecret', async (_, secret: string) => {
+    return encryptSecretWithOsStorage(secret)
+  })
+
+  ipcMain.handle('secure:decryptSecret', async (_, payload: string) => {
+    return decryptSecretWithOsStorage(payload)
+  })
+
+  ipcMain.handle('secure:isAvailable', () => {
+    return safeStorage.isEncryptionAvailable()
   })
 
   // Get version

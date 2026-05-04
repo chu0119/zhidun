@@ -15,7 +15,7 @@
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.10.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.11.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -463,6 +463,32 @@ ISP 运营商识别
 ## `◈` 更新日志 `◈`
 
 </div>
+
+### v1.11.0 (2026-05-04)
+
+**稳定性与类型系统**
+- 修复两个关键 TypeScript 类型错误，恢复主流程类型校验稳定性
+- 快捷键执行链路兼容同步/异步 action，避免 Promise 类型不一致导致的运行时风险
+- 搜索增强与钻取报告逻辑改为兼容当前规则匹配结构，降低字段不一致带来的异常概率
+
+**AI 分析可靠性增强**
+- 分析器新增截断启发式判断，替代脆弱的固定标记检测
+- 支持自动续写与去重拼接，显著降低长响应被截断后报告不完整的问题
+- 续写阶段增加重叠内容去重策略，减少重复段落并提升最终报告可读性
+
+**性能与大文件处理能力**
+- 新增性能追踪接入点，记录分析耗时、Token 使用与关键统计指标
+- 新增 `benchmark:logs` 基准脚本，可快速评估大日志采样与处理吞吐
+- 强化大文件场景下的可观测数据输出，为后续容量规划与性能调优提供依据
+
+**可观测性与诊断能力**
+- 新增本地诊断事件缓冲与快照导出能力
+- 设置面板支持一键导出诊断信息（自动脱敏），便于问题复现与排障协作
+
+**测试与交付链路**
+- 新增 Playwright E2E 冒烟测试，覆盖核心界面可用性与诊断导出下载流程
+- 新增 CI 校验工作流：TypeScript 检查、前端构建、E2E 冒烟联动验证
+- 发布流程保持按 `v*` 标签触发多平台构建，交付链路更完整
 
 ### v1.10.0 (2026-05-02)
 

@@ -179,7 +179,7 @@ export type ProgressCallback = (message: string) => void
 
 export interface AIProviderInterface {
   chatCompletion(messages: AIMessage[], systemPrompt?: string, signal?: AbortSignal): Promise<AIResponse>
-  config: { modelName: string }
+  config: { modelName: string; maxTokens?: number }
 }
 
 export class LogAnalyzer {
@@ -245,7 +245,10 @@ export class LogAnalyzer {
         }
 
         this.log('AI 分析完成')
-        return response.content
+
+        const finalContent = await this.extendIfTruncated(response.content, response.usage?.completionTokens)
+
+        return finalContent
 
       } catch (error: any) {
         // 如果是用户主动停止，不重试
@@ -279,5 +282,86 @@ export class LogAnalyzer {
     if (this.progressCallback) {
       this.progressCallback(message)
     }
+  }
+
+  private isLikelyTruncated(content: string, completionTokens?: number): boolean {
+    const trimmed = content.trimEnd()
+    if (!trimmed) return true
+
+    const maxTokens = this.provider.config.maxTokens || 0
+    const endsCleanly = /[。.!?;；】)"]$/.test(trimmed) || /[#*\-:]\s*$/.test(trimmed)
+    const hasObviousFooter = /参考依据|结论|总结|附录|建议/.test(trimmed.slice(-800))
+    const nearTokenLimit = typeof completionTokens === 'number' && maxTokens > 0
+      ? completionTokens >= Math.max(64, Math.floor(maxTokens * 0.9))
+      : false
+
+    return !endsCleanly || !hasObviousFooter || nearTokenLimit
+  }
+
+  private appendWithoutDuplication(base: string, addition: string): string {
+    const left = base.trimEnd()
+    const right = addition.trim()
+    if (!right) return left
+    if (!left) return right
+
+    const maxOverlap = Math.min(1200, left.length, right.length)
+    for (let overlap = maxOverlap; overlap > 0; overlap--) {
+      if (left.slice(-overlap) === right.slice(0, overlap)) {
+        return `${left}${right.slice(overlap)}`
+      }
+    }
+
+    if (left.endsWith(right.slice(0, 80))) {
+      return `${left}${right.slice(80)}`
+    }
+
+    return `${left}\n\n${right}`
+  }
+
+  private async extendIfTruncated(content: string, completionTokens?: number): Promise<string> {
+    let finalContent = content
+    const maxContinuationAttempts = 3
+
+    if (!this.isLikelyTruncated(finalContent, completionTokens)) {
+      return finalContent
+    }
+
+    this.log('检测到 AI 响应可能不完整，尝试请求继续输出剩余部分...')
+
+    for (let attempt = 0; attempt < maxContinuationAttempts; attempt++) {
+      try {
+        const contMsg: AIMessage[] = [{
+          role: 'user',
+          content: [
+            '请继续并补全上一条分析报告的剩余部分。',
+            '要求：',
+            '1. 不要重复已经输出的内容。',
+            '2. 保持原有标题层级和 Markdown 格式。',
+            '3. 如果已经完整，请只回复“已完成”。',
+          ].join('\n'),
+        }]
+
+        const contResp = await this.provider.chatCompletion(contMsg, this.systemPrompt, this.abortController?.signal)
+        if (!contResp?.content) break
+
+        const normalizedContinuation = contResp.content.trim()
+        if (!normalizedContinuation || normalizedContinuation === '已完成') {
+          break
+        }
+
+        finalContent = this.appendWithoutDuplication(finalContent, normalizedContinuation)
+
+        if (!this.isLikelyTruncated(finalContent, contResp.usage?.completionTokens)) {
+          break
+        }
+
+        this.log(`继续补全仍可能不完整，准备第 ${attempt + 2} 次请求...`)
+      } catch (e: any) {
+        this.log(`继续请求失败: ${e?.message || e}`)
+        break
+      }
+    }
+
+    return finalContent
   }
 }
