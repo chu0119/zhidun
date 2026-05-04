@@ -4,6 +4,7 @@
 import * as echarts from 'echarts'
 import * as topojson from 'topojson-client'
 import worldMapTopoData from '@/data/world-110m.json'
+import { recordDiagnosticEvent } from '@/core/diagnostics'
 
 let registered = false
 let lastAttempt = 0
@@ -116,6 +117,9 @@ export function ensureWorldMap(): boolean {
     registered = false
     lastAttempt = Date.now()
     console.warn('Failed to register world map (will retry on next render):', e)
+    try {
+      recordDiagnosticEvent('ui', 'world_map_register_failed', { message: (e as any)?.message || String(e), attemptAt: new Date().toISOString() })
+    } catch {}
     return false
   }
 }

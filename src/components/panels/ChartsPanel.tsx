@@ -1,12 +1,13 @@
 // 可视化图表面板
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { ScalingChart } from '@/components/common/ScalingChart'
 import { useAnalysisStore } from '@/stores/analysis-store'
 import { useConfigStore } from '@/stores/config-store'
 import { extractChartData } from '@/utils/chart-data'
 import { generateMapScatterData, aggregateByCountry } from '@/core/geoip'
 import { ensureWorldMap, geoNameToChinese } from '@/core/world-map'
+import { recordDiagnosticEvent } from '@/core/diagnostics'
 
 export function ChartsPanel() {
   const reportText = useAnalysisStore(s => s.reportText)
@@ -18,8 +19,28 @@ export function ChartsPanel() {
   const fontSizes = useConfigStore(s => s.config.fontSizes)
   const scale = fontSizes.charts / 12
 
-  // 确保世界地图已注册（返回是否准备好）
-  const mapReady = ensureWorldMap()
+  // 地图就绪状态
+  const [mapReady, setMapReady] = useState<boolean>(() => !!ensureWorldMap())
+
+  const [retrying, setRetrying] = useState(false)
+
+  const handleRetryMap = async () => {
+    try {
+      setRetrying(true)
+      recordDiagnosticEvent('ui', 'world_map_retry', { when: new Date().toISOString() })
+      const ok = await Promise.resolve(ensureWorldMap())
+      setMapReady(!!ok)
+      if (!ok) {
+        recordDiagnosticEvent('ui', 'world_map_retry_failed', { when: new Date().toISOString() })
+      } else {
+        recordDiagnosticEvent('ui', 'world_map_retry_success', { when: new Date().toISOString() })
+      }
+    } catch (err) {
+      try { recordDiagnosticEvent('ui', 'world_map_retry_error', { error: (err as any)?.message || String(err) }) } catch {}
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   // 合并两份报告的数据
   const chartData = useMemo(() => {
@@ -579,6 +600,22 @@ export function ChartsPanel() {
           {worldMapOption && (
             <div className="glass-card p-3 xl:col-span-2">
               <ScalingChart option={worldMapOption} baseHeight={400} scaleFonts={false} />
+            </div>
+          )}
+
+          {/* 地图未就绪但有 Geo 数据时，显示重试提示 */}
+          {hasGeoData && !mapReady && (
+            <div className="glass-card p-3 xl:col-span-2 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-[var(--text-primary)]">地图加载失败</div>
+                <div className="text-xs text-[var(--text-dim)]">世界地图尚未注册，点击重试以重新加载地图数据。</div>
+              </div>
+              <div>
+                <button onClick={handleRetryMap} disabled={retrying}
+                  className="neon-button px-3 py-1 text-sm">
+                  {retrying ? '重试中...' : '重试加载地图'}
+                </button>
+              </div>
             </div>
           )}
         </div>
