@@ -13,7 +13,7 @@ interface ElectronAPI {
   readTextFile: (filePath: string) => Promise<{ success: boolean; text?: string; encoding?: string; size?: number; error?: string }>
   readLargeTextFile: (filePath: string, options?: { maxLines?: number; encoding?: string }) => Promise<{ success: boolean; lines?: string[]; totalLines?: number; encoding?: string; size?: number; sampledLines?: number; error?: string }>
   countLines: (filePath: string) => Promise<{ success: boolean; totalLines?: number; error?: string }>
-  streamAnalyze: (filePath: string, rules: any[]) => Promise<{
+  streamAnalyze: (filePath: string, rules: any[], options?: { config?: any; sessionId?: string }) => Promise<{
     success: boolean
     totalLines: number
     matchedLines: number

@@ -3,6 +3,8 @@
 // 设计原则: 高置信度检测, 低误报率, 面向 Web 日志分析
 // 规则覆盖: 30 个攻击类别, 130+ 条检测规则
 
+import type { RuleEngineConfig } from '@/types/config'
+
 export interface Rule {
   id: string
   name: string
@@ -41,6 +43,99 @@ export interface RuleAnalysisResult {
   }
   categoryStats: Record<string, number>
   report: string
+}
+
+const SEVERITY_ORDER: Record<Rule['severity'], number> = {
+  info: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4,
+}
+
+const DEFAULT_RULE_ENGINE_CONFIG: RuleEngineConfig = {
+  enabledRuleIds: [],
+  disabledRuleIds: [],
+  categoryWhitelist: [],
+  categoryBlacklist: [],
+  severityThreshold: 'info',
+  attackChainWindow: 25,
+  useAnalysisCache: true,
+}
+
+function mergeRuleEngineConfig(config?: Partial<RuleEngineConfig>): RuleEngineConfig {
+  return {
+    ...DEFAULT_RULE_ENGINE_CONFIG,
+    ...(config || {}),
+  }
+}
+
+function shouldIncludeRule(rule: Rule, config: RuleEngineConfig): boolean {
+  if (config.enabledRuleIds.length > 0 && !config.enabledRuleIds.includes(rule.id)) {
+    return false
+  }
+  if (config.disabledRuleIds.includes(rule.id)) {
+    return false
+  }
+  if (config.categoryWhitelist.length > 0 && !config.categoryWhitelist.includes(rule.category)) {
+    return false
+  }
+  if (config.categoryBlacklist.includes(rule.category)) {
+    return false
+  }
+  return SEVERITY_ORDER[rule.severity] >= SEVERITY_ORDER[config.severityThreshold]
+}
+
+function buildAttackChains(matches: RuleMatch[], config: RuleEngineConfig): string[] {
+  const windowSize = Math.max(5, config.attackChainWindow || 25)
+  const byIP = new Map<string, RuleMatch[]>()
+
+  for (const match of matches) {
+    const ip = extractSourceIP(match.line)
+    if (ip === 'unknown') continue
+    const bucket = byIP.get(ip) || []
+    bucket.push(match)
+    byIP.set(ip, bucket)
+  }
+
+  const chains: string[] = []
+
+  for (const [ip, ipMatches] of byIP.entries()) {
+    const sorted = [...ipMatches].sort((a, b) => a.lineNumber - b.lineNumber)
+    let currentStart = sorted[0]
+    let currentEnd = sorted[0]
+    const currentCategories = new Set<string>([sorted[0].rule.category])
+    const currentRules = new Set<string>([sorted[0].rule.id])
+
+    const flushCurrent = () => {
+      if (currentRules.size < 2 && currentCategories.size < 2) return
+      const tsRange = [extractTimestamp(currentStart.line), extractTimestamp(currentEnd.line)].filter(Boolean)
+      const rangeText = tsRange.length === 2 ? ` | 时间: ${tsRange[0]} ~ ${tsRange[1]}` : ''
+      chains.push(`   • ${ip} | 行 ${currentStart.lineNumber}-${currentEnd.lineNumber} | ${[...currentCategories].join(' → ')} | ${currentRules.size} 条规则${rangeText}`)
+    }
+
+    for (let i = 1; i < sorted.length; i++) {
+      const next = sorted[i]
+      const gap = next.lineNumber - currentEnd.lineNumber
+      if (gap <= windowSize) {
+        currentEnd = next
+        currentCategories.add(next.rule.category)
+        currentRules.add(next.rule.id)
+      } else {
+        flushCurrent()
+        currentStart = next
+        currentEnd = next
+        currentCategories.clear()
+        currentRules.clear()
+        currentCategories.add(next.rule.category)
+        currentRules.add(next.rule.id)
+      }
+    }
+
+    flushCurrent()
+  }
+
+  return chains
 }
 
 // ==================== 规则库 ====================
@@ -1798,22 +1893,29 @@ export function deduplicateMatches(matches: RuleMatch[]): AggregatedAlert[] {
 
 // ==================== 分析引擎 ====================
 
-export function analyzeWithRules(lines: string[], progressCallback?: (msg: string) => void, customRules?: Rule[]): RuleAnalysisResult {
+export function analyzeWithRules(
+  lines: string[],
+  progressCallback?: (msg: string) => void,
+  customRules?: Rule[],
+  config?: Partial<RuleEngineConfig>
+): RuleAnalysisResult {
   const matches: RuleMatch[] = []
   const categoryStats: Record<string, number> = {}
   const summary = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
+  const ruleEngineConfig = mergeRuleEngineConfig(config)
 
   const allRules = customRules ? [...BUILT_IN_RULES, ...customRules] : BUILT_IN_RULES
+  const activeRules = allRules.filter(rule => shouldIncludeRule(rule, ruleEngineConfig))
 
   const totalLines = lines.length
-  progressCallback?.(`规则引擎开始扫描 ${totalLines} 行日志...（${allRules.length} 条规则）`)
+  progressCallback?.(`规则引擎开始扫描 ${totalLines} 行日志...（${activeRules.length}/${allRules.length} 条规则已启用）`)
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (!line.trim()) continue
     const matchLine = line.length > 4096 ? line.substring(0, 4096) : line
 
-    for (const rule of allRules) {
+    for (const rule of activeRules) {
       for (const pattern of rule.patterns) {
         pattern.lastIndex = 0
         const match = pattern.exec(matchLine)
@@ -1842,7 +1944,7 @@ export function analyzeWithRules(lines: string[], progressCallback?: (msg: strin
   const aggregatedAlerts = deduplicateMatches(matches)
   progressCallback?.(`去重聚合完成: ${matches.length} 条告警 → ${aggregatedAlerts.length} 条聚合告警`)
 
-  const report = generateRuleReport(lines, matches, summary, categoryStats, aggregatedAlerts)
+  const report = generateRuleReport(lines, matches, summary, categoryStats, aggregatedAlerts, ruleEngineConfig, activeRules.length, allRules.length)
 
   return {
     totalLines,
@@ -1860,7 +1962,10 @@ function generateRuleReport(
   matches: RuleMatch[],
   summary: { critical: number; high: number; medium: number; low: number; info: number },
   categoryStats: Record<string, number>,
-  aggregatedAlerts: AggregatedAlert[]
+  aggregatedAlerts: AggregatedAlert[],
+  config: RuleEngineConfig,
+  activeRuleCount: number,
+  totalRuleCount: number,
 ): string {
   const now = new Date().toLocaleString()
   const totalThreats = summary.critical + summary.high + summary.medium + summary.low + summary.info
@@ -1869,6 +1974,7 @@ function generateRuleReport(
   report += `1. 事件概述\n`
   report += `   • 检测时间：${now}\n`
   report += `   • 分析方式：本地规则引擎匹配\n`
+  report += `   • 规则启用：${activeRuleCount}/${totalRuleCount} 条\n`
   report += `   • 扫描行数：${lines.length}\n`
   report += `   • 告警总数：${totalThreats}\n`
   report += `   • 置信度：${totalThreats > 0 ? '95%' : 'N/A'}\n\n`
@@ -1957,7 +2063,21 @@ function generateRuleReport(
     report += `   无告警\n`
   }
 
-  report += `\n6. 参考依据\n`
+  report += `\n6. 攻击链关联分析\n`
+  const attackChains = buildAttackChains(matches, config)
+  if (attackChains.length > 0) {
+    report += `   共发现 ${attackChains.length} 条可关联攻击链：\n`
+    for (const chain of attackChains.slice(0, 10)) {
+      report += `${chain}\n`
+    }
+    if (attackChains.length > 10) {
+      report += `   ... 共 ${attackChains.length} 条可关联攻击链\n`
+    }
+  } else {
+    report += `   未发现足够密集的多步攻击链\n`
+  }
+
+  report += `\n7. 参考依据\n`
   report += `   • OWASP Top 10 2025\n`
   report += `   • ModSecurity CRS v4 规则库\n`
   report += `   • MITRE ATT&CK 框架\n`

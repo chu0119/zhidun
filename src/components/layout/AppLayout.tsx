@@ -51,6 +51,8 @@ import { AlertHistoryDialog } from '@/components/dialogs/AlertHistoryDialog'
 import { initSoundListener } from '@/utils/audio'
 import type { AnalysisSnapshot } from '@/types/analysis'
 import type { GeoIPResult } from '@/core/geoip'
+import { getFileSnapshot, saveFileSnapshot } from '@/core/incremental-analyzer'
+import type { RuleEngineConfig } from '@/types/config'
 
 type TabKey = 'ai-analysis' | 'ai-report' | 'local-analysis' | 'local-report' | 'threat' | 'attack' | 'session' | 'charts' | 'path' | 'geo' | 'realtime'
 
@@ -148,6 +150,7 @@ function runAnalysisInWorker(
   lines: string[],
   rules: Rule[],
   onProgress: (msg: string) => void,
+  config?: Partial<RuleEngineConfig>,
   workerType: 'single' | 'batch' = 'single',
 ): { promise: Promise<{ result: RuleAnalysisResult; botStats: import('@/core/bot-detector').BotStat[]; ips: string[] }>; cancel: () => void } {
   let worker: Worker | null = null
@@ -232,7 +235,7 @@ function runAnalysisInWorker(
         originalReject(reason)
       }
 
-      worker!.postMessage({ type: 'analyze', lines, rules: serializableRules })
+      worker!.postMessage({ type: 'analyze', lines, rules: serializableRules, config })
     } catch (error) {
       cleanupWorker()
       reject(error)
@@ -314,6 +317,10 @@ export function AppLayout() {
     }))
   }, [])
 
+  const getRuleEngineConfig = useCallback((): Partial<RuleEngineConfig> => {
+    return useConfigStore.getState().config.ruleEngineConfig || {}
+  }, [])
+
   const formatElapsed = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
@@ -352,13 +359,57 @@ export function AppLayout() {
       const fileInfo = await window.electronAPI.getFileInfo(fullPath)
       const fileSize = fileInfo.success && fileInfo.info ? fileInfo.info.size : 0
 
+      const ruleEngineConfig = getRuleEngineConfig()
       let allLines: string[]
       let fileEncoding = 'utf-8'
       let fileTotalLines = 0
+      const fileModifiedMs = fileInfo.success && fileInfo.info?.modifiedTime ? new Date(fileInfo.info.modifiedTime).getTime() : Date.now()
+      const snapshotKey = `${fileSize}:${fileModifiedMs}`
+      const cachedSnapshot = getFileSnapshot(fullPath)
 
       if (fileSize > LARGE_THRESHOLD) {
         // ═══ 大文件：流式全量扫描 ═══
         getStore().addLocalProgress(`[读取] 大文件模式 (${(fileSize / 1024 / 1024 / 1024).toFixed(2)} GB)，启动流式全量扫描...`)
+
+        if (cachedSnapshot?.hash === snapshotKey && cachedSnapshot.analysisResult) {
+          getStore().addLocalProgress('[缓存] 命中同文件同规则分析结果，直接复用快照')
+          const cachedResult = cachedSnapshot.analysisResult
+          const suspiciousLines = cachedResult.matches.map(m => m.line)
+          const matchedCategories = [...new Set(cachedResult.matches.map(m => m.rule.category))]
+          const botStats = detectBots(suspiciousLines)
+          const ips = extractIPsFromLines(suspiciousLines)
+
+          getStore().setLocalReportText(cachedResult.report)
+          getStore().setLocalRuleResult(cachedResult)
+          getStore().setPreprocessResult({
+            totalLines: cachedResult.totalLines,
+            suspiciousLines: suspiciousLines.length,
+            suspiciousContent: suspiciousLines,
+            matchedCategories,
+          })
+          getStore().setPreprocessStatus('done')
+          getStore().setBotStats(botStats)
+          const cachedGeo = ips.length > 0 ? await lookupIPs(ips).catch(() => null) : null
+          if (cachedGeo) getStore().setGeoIPResults(cachedGeo)
+          const elapsed = useAnalysisStore.getState().localElapsedTime
+          await showLocalAnalysisPhase4(progressStore, cachedResult.matches.length, formatElapsed(elapsed), getStatus)
+          setActiveTab('local-report')
+          const snapshot = buildSnapshot(getStore(), cachedGeo)
+          addRecord({
+            filePath: fullPath,
+            fileName: displayName || 'unknown',
+            fileSize,
+            linesAnalyzed: cachedResult.totalLines,
+            modelProvider: 'local',
+            modelName: '本地预处理',
+            analysisTime: elapsed,
+            hasReport: true,
+            reportText: cachedResult.report,
+            notes: '',
+            hasSnapshot: true,
+          }, snapshot)
+          return
+        }
 
         // 注册进度监听
         const removeProgress = window.electronAPI.onStreamProgress((data) => {
@@ -382,7 +433,7 @@ export function AppLayout() {
         getStore().setPreprocessStatus('analyzing')
         let streamResult: any
         try {
-          streamResult = await window.electronAPI.streamAnalyze(fullPath, ruleDefs)
+          streamResult = await window.electronAPI.streamAnalyze(fullPath, ruleDefs, { config: ruleEngineConfig })
         } finally {
           removeProgress()
         }
@@ -416,6 +467,8 @@ export function AppLayout() {
           categoryStats: streamResult.categoryStats,
           report: generateStreamingReport(fileTotalLines, streamResult.matchedLines, streamResult.matches.length, streamResult.summary, streamResult.categoryStats, aggregatedAlerts),
         }
+
+        saveFileSnapshot(fullPath, snapshotKey, fileTotalLines, fileModifiedMs, result)
 
         const elapsed = useAnalysisStore.getState().localElapsedTime
         await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
@@ -502,6 +555,7 @@ export function AppLayout() {
           allLines,
           getCustomRules(),
           (msg) => getStore().addLocalProgress(msg),
+          ruleEngineConfig,
         )
         const workerResult = await workerPromise
         result = workerResult.result
@@ -511,7 +565,7 @@ export function AppLayout() {
         // Worker 失败时回退到主线程同步分析
         getStore().addLocalProgress('[回退] Worker 不可用，使用主线程分析...')
         const { analyzeWithRules } = await import('@/core/rule-engine')
-        result = analyzeWithRules(allLines, (msg) => getStore().addLocalProgress(msg), getCustomRules())
+        result = analyzeWithRules(allLines, (msg) => getStore().addLocalProgress(msg), getCustomRules(), ruleEngineConfig)
         const suspiciousLines = result.matches.map(m => m.line)
         const { detectBots } = await import('@/core/bot-detector')
         botStats = detectBots(suspiciousLines)
@@ -524,6 +578,8 @@ export function AppLayout() {
 
       const elapsed = useAnalysisStore.getState().localElapsedTime
       await showLocalAnalysisPhase4(progressStore, result.matches.length, formatElapsed(elapsed), getStatus)
+
+      saveFileSnapshot(fullPath, snapshotKey, fileTotalLines, fileModifiedMs, result)
 
       // 提取可疑行（匹配到规则的日志行）
       const suspiciousLines = result.matches.map(m => m.line)
@@ -930,7 +986,7 @@ export function AppLayout() {
 
         useQueueStore.getState().updateItem(item.id, { progress: `正在分析 ${allLines.length} 行...` })
 
-        const { promise } = runAnalysisInWorker(allLines, getCustomRules(), () => {}, 'batch')
+        const { promise } = runAnalysisInWorker(allLines, getCustomRules(), () => {}, getRuleEngineConfig(), 'batch')
         const { result } = await promise
         useQueueStore.getState().markDone(item.id, result, result.report)
       } catch (error: any) {

@@ -2,9 +2,89 @@
 
 import React, { useEffect, useRef } from 'react'
 import { useAnalysisStore } from '@/stores/analysis-store'
+import { useConfigStore } from '@/stores/config-store'
+import type { RuleEngineConfig } from '@/types/config'
 
 interface AnalysisPanelProps {
   mode: 'ai' | 'local'
+}
+
+const RULE_PRESETS: Array<{
+  id: 'high-sensitivity' | 'low-false-positive' | 'critical-only'
+  label: string
+  config: Partial<RuleEngineConfig>
+}> = [
+  {
+    id: 'high-sensitivity',
+    label: '高敏感模式',
+    config: {
+      severityThreshold: 'info',
+      attackChainWindow: 40,
+      categoryWhitelist: [],
+      categoryBlacklist: [],
+      enabledRuleIds: [],
+      disabledRuleIds: [],
+      useAnalysisCache: true,
+    },
+  },
+  {
+    id: 'low-false-positive',
+    label: '低误报模式',
+    config: {
+      severityThreshold: 'medium',
+      attackChainWindow: 20,
+      categoryWhitelist: [],
+      categoryBlacklist: ['信息泄露', '爬虫Bot'],
+      enabledRuleIds: [],
+      disabledRuleIds: [],
+      useAnalysisCache: true,
+    },
+  },
+  {
+    id: 'critical-only',
+    label: '仅高危模式',
+    config: {
+      severityThreshold: 'high',
+      attackChainWindow: 15,
+      categoryWhitelist: [],
+      categoryBlacklist: [],
+      enabledRuleIds: [],
+      disabledRuleIds: [],
+      useAnalysisCache: true,
+    },
+  },
+]
+
+function normalizeStringArray(input?: string[]): string[] {
+  return [...new Set((input || []).map(s => s.trim()).filter(Boolean))].sort()
+}
+
+function isSameStringArray(a?: string[], b?: string[]): boolean {
+  const left = normalizeStringArray(a)
+  const right = normalizeStringArray(b)
+  if (left.length !== right.length) return false
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) return false
+  }
+  return true
+}
+
+function isSameRuleConfig(current: Partial<RuleEngineConfig>, preset: Partial<RuleEngineConfig>): boolean {
+  const sameSeverity = (current.severityThreshold || 'info') === (preset.severityThreshold || 'info')
+  const sameWindow = (current.attackChainWindow || 25) === (preset.attackChainWindow || 25)
+  const sameCache = (current.useAnalysisCache ?? true) === (preset.useAnalysisCache ?? true)
+  const sameCategoryWhitelist = isSameStringArray(current.categoryWhitelist, preset.categoryWhitelist)
+  const sameCategoryBlacklist = isSameStringArray(current.categoryBlacklist, preset.categoryBlacklist)
+  const sameEnabledRules = isSameStringArray(current.enabledRuleIds, preset.enabledRuleIds)
+  const sameDisabledRules = isSameStringArray(current.disabledRuleIds, preset.disabledRuleIds)
+
+  return sameSeverity
+    && sameWindow
+    && sameCache
+    && sameCategoryWhitelist
+    && sameCategoryBlacklist
+    && sameEnabledRules
+    && sameDisabledRules
 }
 
 export function AnalysisPanel({ mode }: AnalysisPanelProps) {
@@ -16,8 +96,10 @@ export function AnalysisPanel({ mode }: AnalysisPanelProps) {
   )
   const error = useAnalysisStore(s => s.error)
   const thinkingContent = useAnalysisStore(s => mode === 'ai' ? s.thinkingContent : '')
+  const ruleEngineConfig = useConfigStore(s => s.config.ruleEngineConfig)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [showThinking, setShowThinking] = React.useState(false)
+  const activePreset = RULE_PRESETS.find(p => isSameRuleConfig(ruleEngineConfig || {}, p.config))
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -28,6 +110,15 @@ export function AnalysisPanel({ mode }: AnalysisPanelProps) {
 
   return (
     <div className="h-full flex flex-col" style={{ zoom: 'var(--font-analysis-scale, 1)' }}>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-xs px-2 py-1 rounded border border-[var(--border-color)] text-[var(--text-secondary)]">
+          当前策略：{activePreset ? activePreset.label : '自定义'}
+        </span>
+        {mode === 'local' && (
+          <span className="text-xs text-[var(--text-dim)]">本地规则模式</span>
+        )}
+      </div>
+
       {/* AI 思考过程 (仅 AI 模式) */}
       {mode === 'ai' && thinkingContent && (
         <div className="mb-3">

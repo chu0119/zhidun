@@ -1,12 +1,22 @@
 // 配置状态管理
 
 import { create } from 'zustand'
-import type { AppConfig, ModelConfig } from '@/types/config'
+import type { AppConfig, ModelConfig, RuleEngineConfig } from '@/types/config'
 import { DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS, DEFAULT_API_ENDPOINTS, DEFAULT_MODEL_NAMES } from '@/core/constants'
 import { encryptApiKey, decryptApiKey } from '@/utils/encryption'
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 const SECURE_SECRET_PREFIX = 'safeStorage:'
+
+const DEFAULT_RULE_ENGINE_CONFIG: RuleEngineConfig = {
+  enabledRuleIds: [],
+  disabledRuleIds: [],
+  categoryWhitelist: [],
+  categoryBlacklist: [],
+  severityThreshold: 'info',
+  attackChainWindow: 25,
+  useAnalysisCache: true,
+}
 
 interface ConfigState {
   config: AppConfig
@@ -42,6 +52,7 @@ const DEFAULT_CONFIG: AppConfig = {
   windowWidth: 1400,
   windowHeight: 900,
   showWelcome: true,
+  ruleEngineConfig: DEFAULT_RULE_ENGINE_CONFIG,
 }
 
 export const useConfigStore = create<ConfigState>((set, get) => ({
@@ -57,8 +68,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (result.success && result.data) {
         const json = atob(result.data)
         const data = JSON.parse(json)
-        if (data.version === '1.0' && data.config) {
+        if (data.version === '1.0' || data.version === '1.1') {
           const loaded = data.config
+          const mergedRuleEngineConfig = {
+            ...DEFAULT_RULE_ENGINE_CONFIG,
+            ...(loaded.ruleEngineConfig || {}),
+          }
           // Deep merge fontSizes
           if (loaded.fontSizes) {
             loaded.fontSizes = { ...DEFAULT_CONFIG.fontSizes, ...loaded.fontSizes }
@@ -90,6 +105,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
               ...loaded,
               currentModel: { ...DEFAULT_CONFIG.currentModel, ...(loaded.currentModel || {}) },
               fontSizes: { ...DEFAULT_CONFIG.fontSizes, ...(loaded.fontSizes || {}) },
+              ruleEngineConfig: mergedRuleEngineConfig,
             },
             loaded: true,
           })
@@ -126,7 +142,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           }
         }
       }
-      const data = JSON.stringify({ version: '1.0', config: configToSave }, null, 2)
+      const data = JSON.stringify({ version: '1.1', config: configToSave }, null, 2)
       await window.electronAPI.writeFile(configPath, data)
     } catch (error) {
       console.error('保存配置失败:', error)
@@ -161,7 +177,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config.currentModel?.apiKey) {
         config.currentModel = { ...config.currentModel, apiKey: '••••••••' }
       }
-      const data = JSON.stringify({ version: '1.0', config }, null, 2)
+      const data = JSON.stringify({ version: '1.1', config }, null, 2)
       const result = await window.electronAPI.writeFile(filePath, data)
       return result.success
     } catch {
@@ -179,6 +195,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         const imported = { ...DEFAULT_CONFIG, ...data.config }
         if (data.config.fontSizes) {
           imported.fontSizes = { ...DEFAULT_CONFIG.fontSizes, ...data.config.fontSizes }
+        }
+        imported.ruleEngineConfig = {
+          ...DEFAULT_RULE_ENGINE_CONFIG,
+          ...(data.config.ruleEngineConfig || {}),
         }
         set({ config: imported })
         get().saveConfig()

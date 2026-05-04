@@ -2,6 +2,17 @@
 
 import type { PreprocessConfig } from '@/core/preprocessor'
 import type { NotificationConfig, RealtimeNotificationConfig } from '@/core/notification-engine'
+import type { RiskLevel } from '@/types/analysis'
+
+export interface RuleEngineConfig {
+  enabledRuleIds: string[]
+  disabledRuleIds: string[]
+  categoryWhitelist: string[]
+  categoryBlacklist: string[]
+  severityThreshold: RiskLevel
+  attackChainWindow: number
+  useAnalysisCache: boolean
+}
 
 export interface ModelConfig {
   provider: string
@@ -33,6 +44,7 @@ export interface AppConfig {
   preprocessConfig?: PreprocessConfig
   notificationConfig?: NotificationConfig
   realtimeNotificationConfig?: RealtimeNotificationConfig
+  ruleEngineConfig?: RuleEngineConfig
 }
 
 export interface ConfigFile {

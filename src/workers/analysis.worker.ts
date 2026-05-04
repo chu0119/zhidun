@@ -3,9 +3,11 @@
 
 import { analyzeWithRules } from '@/core/rule-engine'
 import type { Rule, RuleAnalysisResult } from '@/core/rule-engine'
+import type { RuleEngineConfig } from '@/types/config'
 import { detectBots } from '@/core/bot-detector'
 import type { BotStat } from '@/core/bot-detector'
 import { extractIPsFromLines } from '@/core/geoip'
+import { getCompiledRegex } from '@/core/cache-manager'
 
 // 可序列化的规则格式（RegExp → string）
 interface SerializableRule {
@@ -25,6 +27,7 @@ interface AnalyzeMessage {
   type: 'analyze'
   lines: string[]
   rules: SerializableRule[]
+  config?: Partial<RuleEngineConfig>
 }
 
 interface CancelMessage {
@@ -60,9 +63,9 @@ function reconstructRules(serialized: SerializableRule[]): Rule[] {
     ...r,
     patterns: r.patterns.map(p => {
       try {
-        return new RegExp(p.source, p.flags)
+        return getCompiledRegex(p.source, p.flags)
       } catch {
-        return new RegExp(p.source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), p.flags)
+        return getCompiledRegex(p.source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), p.flags)
       }
     }),
   }))
@@ -86,14 +89,14 @@ self.onmessage = (e: MessageEvent<WorkerInputMessage>) => {
 
   if (data.type === 'analyze') {
     cancelled = false
-    const { lines, rules: serializedRules } = data
+    const { lines, rules: serializedRules, config } = data
 
     try {
       // 重建 RegExp 对象
       const rules = reconstructRules(serializedRules)
 
       // 运行规则引擎分析
-      const result = analyzeWithRules(lines, createProgressCallback(), rules)
+      const result = analyzeWithRules(lines, createProgressCallback(), rules, config)
 
       if (cancelled) return
 

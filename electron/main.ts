@@ -438,7 +438,7 @@ function setupIPC() {
   })
 
   // 流式规则引擎全量扫描（大文件专用，不采样，逐行匹配）
-  ipcMain.handle('file:streamAnalyze', async (_, filePath: string, rules: StreamingRule[], sessionId?: string) => {
+  ipcMain.handle('file:streamAnalyze', async (_, filePath: string, rules: StreamingRule[], ruleConfig?: any, sessionId?: string) => {
     if (!validatePath(filePath)) return { success: false, error: '无效的文件路径', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
     if (!isAllowedFileType(filePath)) return { success: false, error: '不允许的文件类型', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
     if (isBinaryFile(filePath)) return { success: false, error: '不支持分析二进制文件', totalLines: 0, matchedLines: 0, matches: [], summary: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, categoryStats: {} }
@@ -463,6 +463,7 @@ function setupIPC() {
       const result = await streamAnalyze(filePath, rules, {
         signal: abortController.signal,
         maxMatches: 50000,
+        config: ruleConfig,
         onProgress: (linesScanned, matchesFound) => {
           // 通过 webContents 发送进度到渲染进程
           mainWindow?.webContents.send('stream:progress', { linesScanned, matchesFound, sessionId: sid })

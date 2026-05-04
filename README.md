@@ -15,7 +15,7 @@
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.11.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.12.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -463,6 +463,30 @@ ISP 运营商识别
 ## `◈` 更新日志 `◈`
 
 </div>
+
+### v1.12.0 (2026-05-04)
+
+**规则引擎配置化升级**
+- 新增规则引擎配置模型：支持规则 ID 白/黑名单、分类白/黑名单、最低风险阈值
+- 规则引擎与 Worker/流式扫描统一支持配置过滤，避免大文件与普通分析策略不一致
+- 报告新增“规则启用数”展示，便于审计当前策略生效范围
+
+**攻击链关联分析增强**
+- 本地规则报告新增攻击链关联段落，按 IP + 行号窗口识别多步攻击路径
+- 支持攻击链窗口可配置，兼顾高敏感排查和低噪音值守场景
+
+**性能与复用能力优化**
+- 分析流程接入文件快照缓存：同文件重复分析可直接复用结果
+- 增量/缓存链路打通，减少重复计算并提升大文件场景响应速度
+
+**可用性与操作体验提升**
+- 设置页新增规则策略可视化配置（阈值、窗口、缓存开关、白/黑名单）
+- 新增 3 个一键预设模板：高敏感、低误报、仅高危
+- 新增“当前策略”状态识别：设置页与分析面板可实时显示预设/自定义状态
+
+**稳定性改进**
+- 完成规则配置全链路类型收敛，确保 TypeScript 严格校验通过
+- 主进程 IPC 与前端类型声明同步，避免参数签名不一致引发运行时问题
 
 ### v1.11.0 (2026-05-04)
 

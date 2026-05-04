@@ -50,6 +50,10 @@ export function getLastAnalysisResult(filePath: string): RuleAnalysisResult | un
   return fileSnapshots.get(filePath)?.analysisResult
 }
 
+export function getFileSnapshot(filePath: string): FileSnapshot | undefined {
+  return fileSnapshots.get(filePath)
+}
+
 // 清理快照（防止内存泄漏）
 export function clearFileSnapshot(filePath: string): void {
   fileSnapshots.delete(filePath)

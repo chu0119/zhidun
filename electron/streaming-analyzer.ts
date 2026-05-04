@@ -5,7 +5,14 @@
 
 import fs from 'fs'
 import readline from 'readline'
-import path from 'path'
+
+export interface StreamingRuleEngineConfig {
+  enabledRuleIds?: string[]
+  disabledRuleIds?: string[]
+  categoryWhitelist?: string[]
+  categoryBlacklist?: string[]
+  severityThreshold?: 'critical' | 'high' | 'medium' | 'low' | 'info'
+}
 
 export interface StreamingRule {
   id: string
@@ -49,6 +56,24 @@ function parseRegex(patternStr: string): RegExp | null {
   }
 }
 
+const SEVERITY_ORDER: Record<NonNullable<StreamingRuleEngineConfig['severityThreshold']>, number> = {
+  info: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4,
+}
+
+function shouldIncludeRule(rule: StreamingRule, config?: StreamingRuleEngineConfig): boolean {
+  if (!config) return true
+  if (config.enabledRuleIds?.length && !config.enabledRuleIds.includes(rule.id)) return false
+  if (config.disabledRuleIds?.includes(rule.id)) return false
+  if (config.categoryWhitelist?.length && !config.categoryWhitelist.includes(rule.category)) return false
+  if (config.categoryBlacklist?.includes(rule.category)) return false
+  const threshold = config.severityThreshold || 'info'
+  return SEVERITY_ORDER[rule.severity as keyof typeof SEVERITY_ORDER] >= SEVERITY_ORDER[threshold]
+}
+
 export async function streamAnalyze(
   filePath: string,
   rules: StreamingRule[],
@@ -57,6 +82,7 @@ export async function streamAnalyze(
     maxMatches?: number
     onProgress?: (linesScanned: number, matchesFound: number) => void
     signal?: AbortSignal
+    config?: StreamingRuleEngineConfig
   }
 ): Promise<StreamingResult> {
   const maxMatches = options?.maxMatches || 50000
@@ -83,6 +109,7 @@ export async function streamAnalyze(
   // 预编译正则
   const compiledRules: { rule: StreamingRule; regexes: RegExp[] }[] = []
   for (const rule of rules) {
+    if (!shouldIncludeRule(rule, options?.config)) continue
     const regexes: RegExp[] = []
     for (const p of rule.patterns) {
       const r = parseRegex(p)

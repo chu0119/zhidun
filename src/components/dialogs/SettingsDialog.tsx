@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { useConfigStore } from '@/stores/config-store'
 import { useThemeStore, ThemeName } from '@/stores/theme-store'
 import { downloadDiagnosticSnapshot } from '@/core/diagnostics'
+import type { RuleEngineConfig } from '@/types/config'
 
 interface SettingsDialogProps {
   open: boolean
@@ -20,10 +21,102 @@ const THEMES: { name: ThemeName; label: string; color: string }[] = [
   { name: 'light', label: '经典亮', color: '#0066cc' },
 ]
 
+const RULE_PRESETS: Array<{
+  id: 'high-sensitivity' | 'low-false-positive' | 'critical-only'
+  label: string
+  description: string
+  config: Partial<RuleEngineConfig>
+}> = [
+  {
+    id: 'high-sensitivity',
+    label: '高敏感模式',
+    description: '尽量捕获更多可疑行为，适合排查期',
+    config: {
+      severityThreshold: 'info',
+      attackChainWindow: 40,
+      categoryWhitelist: [],
+      categoryBlacklist: [],
+      enabledRuleIds: [],
+      disabledRuleIds: [],
+      useAnalysisCache: true,
+    },
+  },
+  {
+    id: 'low-false-positive',
+    label: '低误报模式',
+    description: '优先保障准确性，过滤低价值告警',
+    config: {
+      severityThreshold: 'medium',
+      attackChainWindow: 20,
+      categoryWhitelist: [],
+      categoryBlacklist: ['信息泄露', '爬虫Bot'],
+      enabledRuleIds: [],
+      disabledRuleIds: [],
+      useAnalysisCache: true,
+    },
+  },
+  {
+    id: 'critical-only',
+    label: '仅高危模式',
+    description: '只关注高危与危急事件，适合应急值守',
+    config: {
+      severityThreshold: 'high',
+      attackChainWindow: 15,
+      categoryWhitelist: [],
+      categoryBlacklist: [],
+      enabledRuleIds: [],
+      disabledRuleIds: [],
+      useAnalysisCache: true,
+    },
+  },
+]
+
+function normalizeStringArray(input?: string[]): string[] {
+  return [...new Set((input || []).map(s => s.trim()).filter(Boolean))].sort()
+}
+
+function isSameStringArray(a?: string[], b?: string[]): boolean {
+  const left = normalizeStringArray(a)
+  const right = normalizeStringArray(b)
+  if (left.length !== right.length) return false
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) return false
+  }
+  return true
+}
+
+function isSameRuleConfig(current: Partial<RuleEngineConfig>, preset: Partial<RuleEngineConfig>): boolean {
+  const sameSeverity = (current.severityThreshold || 'info') === (preset.severityThreshold || 'info')
+  const sameWindow = (current.attackChainWindow || 25) === (preset.attackChainWindow || 25)
+  const sameCache = (current.useAnalysisCache ?? true) === (preset.useAnalysisCache ?? true)
+  const sameCategoryWhitelist = isSameStringArray(current.categoryWhitelist, preset.categoryWhitelist)
+  const sameCategoryBlacklist = isSameStringArray(current.categoryBlacklist, preset.categoryBlacklist)
+  const sameEnabledRules = isSameStringArray(current.enabledRuleIds, preset.enabledRuleIds)
+  const sameDisabledRules = isSameStringArray(current.disabledRuleIds, preset.disabledRuleIds)
+
+  return sameSeverity
+    && sameWindow
+    && sameCache
+    && sameCategoryWhitelist
+    && sameCategoryBlacklist
+    && sameEnabledRules
+    && sameDisabledRules
+}
+
 export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
   const { config, updateConfig } = useConfigStore()
   const { currentTheme, setTheme } = useThemeStore()
   const [tab, setTab] = useState<'general' | 'analysis' | 'appearance'>('general')
+
+  const ruleEngineConfig = config.ruleEngineConfig || {
+    enabledRuleIds: [],
+    disabledRuleIds: [],
+    categoryWhitelist: [],
+    categoryBlacklist: [],
+    severityThreshold: 'info' as const,
+    attackChainWindow: 25,
+    useAnalysisCache: true,
+  }
 
   const BASE_SIZES: Record<string, number> = { menu: 13, analysis: 13, report: 14, charts: 12, panels: 13 }
 
@@ -46,6 +139,26 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
       theme: currentTheme,
       generatedBy: 'SettingsDialog',
     })
+  }
+
+  const updateRuleEngineConfig = (partial: Partial<typeof ruleEngineConfig>) => {
+    updateConfig({
+      ruleEngineConfig: {
+        ...ruleEngineConfig,
+        ...partial,
+      },
+    })
+  }
+
+  const parseMultiline = (value: string) => value
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  const activePreset = RULE_PRESETS.find(p => isSameRuleConfig(ruleEngineConfig, p.config))
+
+  const applyRulePreset = (preset: (typeof RULE_PRESETS)[number]) => {
+    updateRuleEngineConfig(preset.config)
   }
 
   if (!open) return null
@@ -114,6 +227,109 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
                   onChange={(e) => useConfigStore.getState().updateModel({ temperature: parseFloat(e.target.value) })}
                   className="w-full accent-[var(--accent-primary)]" />
                 <div className="text-xs text-[var(--text-dim)] text-right mt-1">{config.currentModel.temperature}</div>
+              </div>
+
+              <div className="pt-2 border-t border-[var(--border-color)]/60">
+                <label className="text-sm text-[var(--text-secondary)] mb-2 block">规则预设模板</label>
+                <div className="mb-2">
+                  <span className="text-xs px-2 py-1 rounded border border-[var(--border-color)] text-[var(--text-secondary)]">
+                    当前策略：{activePreset ? activePreset.label : '自定义'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {RULE_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyRulePreset(preset)}
+                      className="text-left p-2 rounded border border-[var(--border-color)] hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/10 transition-colors"
+                    >
+                      <div className="text-sm text-[var(--text-primary)]">{preset.label}</div>
+                      <div className="text-xs text-[var(--text-dim)] mt-0.5">{preset.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-[var(--border-color)]/60">
+                <label className="text-sm text-[var(--text-secondary)] mb-2 block">规则引擎最低风险阈值</label>
+                <select
+                  value={ruleEngineConfig.severityThreshold}
+                  onChange={(e) => updateRuleEngineConfig({ severityThreshold: e.target.value as any })}
+                  className="neon-input w-full"
+                >
+                  <option value="info">信息及以上</option>
+                  <option value="low">低危及以上</option>
+                  <option value="medium">中危及以上</option>
+                  <option value="high">高危及以上</option>
+                  <option value="critical">仅危急</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm text-[var(--text-secondary)] mb-1 block">攻击链窗口（行数）</label>
+                <input
+                  type="number"
+                  value={ruleEngineConfig.attackChainWindow}
+                  onChange={(e) => updateRuleEngineConfig({ attackChainWindow: Math.max(5, parseInt(e.target.value) || 25) })}
+                  className="neon-input w-full"
+                  min="5"
+                  max="500"
+                  step="1"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="useAnalysisCache"
+                  checked={!!ruleEngineConfig.useAnalysisCache}
+                  onChange={(e) => updateRuleEngineConfig({ useAnalysisCache: e.target.checked })}
+                  className="accent-[var(--accent-primary)]"
+                />
+                <label htmlFor="useAnalysisCache" className="text-sm text-[var(--text-secondary)]">启用分析结果缓存</label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-[var(--text-secondary)] mb-1 block">分类白名单（每行一个）</label>
+                  <textarea
+                    value={ruleEngineConfig.categoryWhitelist.join('\n')}
+                    onChange={(e) => updateRuleEngineConfig({ categoryWhitelist: parseMultiline(e.target.value) })}
+                    className="neon-input w-full h-24 resize-none"
+                    placeholder="SQL注入&#10;XSS攻击"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-[var(--text-secondary)] mb-1 block">分类黑名单（每行一个）</label>
+                  <textarea
+                    value={ruleEngineConfig.categoryBlacklist.join('\n')}
+                    onChange={(e) => updateRuleEngineConfig({ categoryBlacklist: parseMultiline(e.target.value) })}
+                    className="neon-input w-full h-24 resize-none"
+                    placeholder="信息泄露"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-[var(--text-secondary)] mb-1 block">规则 ID 白名单（每行一个）</label>
+                  <textarea
+                    value={ruleEngineConfig.enabledRuleIds.join('\n')}
+                    onChange={(e) => updateRuleEngineConfig({ enabledRuleIds: parseMultiline(e.target.value) })}
+                    className="neon-input w-full h-24 resize-none"
+                    placeholder="SQL-001&#10;XSS-002"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm text-[var(--text-secondary)] mb-1 block">规则 ID 黑名单（每行一个）</label>
+                  <textarea
+                    value={ruleEngineConfig.disabledRuleIds.join('\n')}
+                    onChange={(e) => updateRuleEngineConfig({ disabledRuleIds: parseMultiline(e.target.value) })}
+                    className="neon-input w-full h-24 resize-none"
+                    placeholder="SCAN-004"
+                  />
+                </div>
               </div>
             </div>
           )}
