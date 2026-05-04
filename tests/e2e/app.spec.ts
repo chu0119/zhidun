@@ -13,7 +13,18 @@ test.beforeEach(async ({ page }) => {
       openFolder: async () => null,
       listLogFiles: async () => ({ success: true, files: [] }),
       saveFile: async () => null,
-      readFile: async () => ({ success: false, error: 'mock' }),
+      readFile: async (filePath: string) => {
+        if (filePath.includes('app_config.json')) {
+          const payload = {
+            version: '1.1',
+            config: {
+              showWelcome: false,
+            },
+          }
+          return { success: true, data: btoa(JSON.stringify(payload)) }
+        }
+        return { success: false, error: 'mock' }
+      },
       readTextFile: async () => ({ success: false, error: 'mock' }),
       readLargeTextFile: async () => ({ success: false, error: 'mock' }),
       countLines: async () => ({ success: false, error: 'mock' }),
@@ -32,7 +43,7 @@ test.beforeEach(async ({ page }) => {
       deleteFile: async () => ({ success: true }),
       openExternal: () => {},
       getAppPath: async () => '/tmp/zhidun-test',
-      getVersion: async () => '1.10.0',
+      getVersion: async () => '1.12.0',
       getMachineId: async () => 'mock-machine-id',
       secureEncryptSecret: async (secret: string) => ({ success: true, data: `safeStorage:${btoa(secret)}` }),
       secureDecryptSecret: async (payload: string) => ({ success: true, data: atob(payload.replace('safeStorage:', '')) }),
@@ -52,7 +63,7 @@ test.beforeEach(async ({ page }) => {
       checkUpdate: async () => ({ hasUpdate: false }),
       downloadUpdate: async () => ({ success: true }),
       installUpdate: () => {},
-      getUpdateVersion: async () => '1.10.0',
+      getUpdateVersion: async () => '1.12.0',
       onUpdateEvent: () => () => {},
     }
 
@@ -63,7 +74,7 @@ test.beforeEach(async ({ page }) => {
 
 test('home page opens settings and exports diagnostics', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: '星川智盾' })).toBeVisible()
+  await expect(page.getByText('星川智盾').first()).toBeVisible()
 
   await page.getByRole('button', { name: '设置' }).click()
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()

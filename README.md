@@ -15,7 +15,7 @@
 
 <br/>
 
-![Version](https://img.shields.io/badge/VERSION-1.12.0-00f0ff?style=for-the-badge&labelColor=0a0e1a)
+![Version](https://img.shields.io/badge/VERSION-1.12.1-00f0ff?style=for-the-badge&labelColor=0a0e1a)
 ![License](https://img.shields.io/badge/LICENSE-AGPL--3.0-ff6b6b?style=for-the-badge&labelColor=0a0e1a)
 ![Platform](https://img.shields.io/badge/PLATFORM-Windows_%7C_macOS_%7C_Linux-b44aff?style=for-the-badge&labelColor=0a0e1a)
 
@@ -463,6 +463,21 @@ ISP 运营商识别
 ## `◈` 更新日志 `◈`
 
 </div>
+
+### v1.12.1 (2026-05-04)
+
+**紧急修复（Hotfix）**
+- 修复 v1.12.0 在部分环境启动后黑屏的问题
+- 根因修复：移除渲染进程对 Node 内置 `crypto` 的直接依赖，避免生产环境运行时崩溃
+- 增量分析 hash 逻辑替换为纯前端实现，保证 Electron 渲染层兼容性
+
+**CI 稳定性修复**
+- 修复 E2E 冒烟测试首页元素断言不稳定问题
+- 更新 CI 到 Node 24 迁移友好配置（actions 版本升级 + 运行环境变量）
+- 处理本地/CI 代理干扰场景，降低 Playwright webServer 可用性误判概率
+
+**说明**
+- 若你已安装 v1.12.0 且出现黑屏，请直接升级到 v1.12.1
 
 ### v1.12.0 (2026-05-04)
 

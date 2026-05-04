@@ -1,6 +1,5 @@
 // 增量分析引擎 - 基于文件hash追踪变化
 
-import { createHash } from 'crypto'
 import type { RuleAnalysisResult, RuleMatch } from './rule-engine'
 
 interface FileSnapshot {
@@ -14,9 +13,14 @@ interface FileSnapshot {
 // 文件快照存储（内存）
 const fileSnapshots = new Map<string, FileSnapshot>()
 
-// 计算文件内容的SHA256 hash
+// 计算文件内容hash（纯前端实现，避免依赖Node内置模块）
 export function computeFileHash(content: string): string {
-  return createHash('sha256').update(content).digest('hex')
+  let hash = 2166136261
+  for (let i = 0; i < content.length; i++) {
+    hash ^= content.charCodeAt(i)
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
 // 检查文件是否有变化
