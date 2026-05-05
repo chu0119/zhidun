@@ -80,7 +80,8 @@
     "asarUnpack": [
       "node_modules/chardet/**/*",
       "node_modules/iconv-lite/**/*",
-      "node_modules/geoip-lite/**/*"
+      "node_modules/geoip-lite/**/*",
+      "node_modules/ssh2/**/*"
     ],
     "win": {
       "executableName": "zhidun",
